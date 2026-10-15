@@ -3,7 +3,9 @@
 #
 # Starts the compositor nested on the host session, then drives it over the
 # control socket and checks the responses. This exercises real compositor state
-# (workspace switching) without needing to inject input events.
+# (workspace switching) without needing to inject input events. A second phase
+# launches a real client so window counting, focus-on-open and moving a window
+# to another workspace are verified end to end.
 #
 # Development-only; uses a private XDG_RUNTIME_DIR and never touches the host
 # session beyond a nested window.
@@ -11,6 +13,7 @@ set -u
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="${ARCHLUME_COMPOSITOR:-$ROOT/target/debug/archlume-compositor}"
+CLIENT="${ARCHLUME_CONTROL_CLIENT:-foot}"
 PAT='archlume-composito[r]'
 
 HOST_RT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
@@ -18,11 +21,13 @@ HOST_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
 HOST_SOCK="$HOST_RT/$HOST_DISPLAY"
 
 LOG="${TMPDIR:-/tmp}/archlume-control-compositor.log"
+CLIENT_LOG="${TMPDIR:-/tmp}/archlume-control-client.log"
 RT="$(mktemp -d "${TMPDIR:-/tmp}/archlume-control.XXXXXX")"
 SOCK="$RT/archlume-control.sock"
 
 cleanup() {
   pkill -f "$PAT" 2>/dev/null || true
+  pkill -x "$CLIENT" 2>/dev/null || true
   rm -rf "$RT"
 }
 trap cleanup EXIT
@@ -39,6 +44,7 @@ if [ ! -x "$BIN" ]; then
 fi
 [ -S "$HOST_SOCK" ] || fail "no host Wayland socket at $HOST_SOCK"
 command -v socat >/dev/null 2>&1 || fail "socat is required"
+command -v "$CLIENT" >/dev/null 2>&1 || fail "control client '$CLIENT' not found"
 
 pkill -f "$PAT" 2>/dev/null || true
 sleep 1
@@ -68,6 +74,7 @@ check() {
   echo "ok: $command -> $got"
 }
 
+# Phase 1: pure state, no clients.
 check "ping" "ok pong"
 check "workspace" "ok 1"
 check "switch 5" "ok 5 changed"
@@ -79,4 +86,32 @@ check "switch 99" "ok 10 changed"
 check "workspace" "ok 10"
 check "bogus" "err unknown command"
 
-echo "PASS: control socket works and workspace state is consistent"
+# Phase 2: a real client.
+check "switch 1" "ok 1 changed"
+
+sock_name=""
+for _ in $(seq 1 20); do
+  sock_name=$(ls "$RT" 2>/dev/null | grep -E '^wayland-[0-9]+$' | head -1)
+  [ -n "$sock_name" ] && break
+  sleep 0.25
+done
+[ -n "$sock_name" ] || fail "compositor did not create a Wayland socket"
+
+XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY="$sock_name" \
+  setsid --fork "$CLIENT" sh -c 'sleep 30' < /dev/null > "$CLIENT_LOG" 2>&1
+
+# Wait for the window to be mapped (count becomes 1).
+for _ in $(seq 1 40); do
+  [ "$(ctl windows)" = "ok 1" ] && break
+  sleep 0.25
+done
+check "windows" "ok 1"
+
+# New windows get keyboard focus, so the focused window can be moved.
+check "move 2" "ok 2"
+check "workspace" "ok 2"
+check "windows" "ok 1"
+check "switch 1" "ok 1 changed"
+check "switch 2" "ok 2 changed"
+
+echo "PASS: control socket works; workspace, window count, focus-on-open and move verified"
