@@ -89,8 +89,10 @@ nested winit backend cannot feed synthetic key events to the compositor.
 Switching workspaces also re-targets keyboard focus to the topmost window on
 the new workspace (or clears it), so typing does not go to an off-screen
 window (`wm::in_region`, unit-tested). New windows cascade diagonally from the
-top-left of the active workspace and receive focus on open (`wm::cascade_position`,
-unit-tested).
+top-left of the active workspace and are activated and focused on open
+(`wm::cascade_position`, unit-tested). Activating a window raises it, marks it
+active (and others inactive) and sends a configure, matching the xdg-activated
+state.
 
 Un-snap restore is implemented: `wm::SnapMemory` remembers each window's
 floating size when it is first snapped, and a drop in the centre restores that

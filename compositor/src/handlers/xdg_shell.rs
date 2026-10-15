@@ -40,7 +40,7 @@ impl XdgShellHandler for ArchLume {
         // land exactly on top of one another, and focus them.
         let location = self.placement_for_new_window();
         self.space.map_element(window.clone(), location, false);
-        self.focus_window(&window);
+        self.activate_window(&window);
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {

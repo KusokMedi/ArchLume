@@ -266,24 +266,43 @@ impl ArchLume {
             })
             .cloned();
 
-        let focus = candidate.and_then(|window| window.toplevel().map(|t| t.wl_surface().clone()));
-        let serial = SERIAL_COUNTER.next_serial();
-        self.seat
-            .get_keyboard()
-            .unwrap()
-            .set_focus(self, focus, serial);
+        match candidate {
+            Some(window) => self.activate_window(&window),
+            None => {
+                for window in self.space.elements() {
+                    window.set_activated(false);
+                    if let Some(toplevel) = window.toplevel() {
+                        toplevel.send_pending_configure();
+                    }
+                }
+                let serial = SERIAL_COUNTER.next_serial();
+                self.seat.get_keyboard().unwrap().set_focus(
+                    self,
+                    Option::<WlSurface>::None,
+                    serial,
+                );
+            }
+        }
     }
 
-    /// Give keyboard focus to `window` (used when a new window opens).
-    pub fn focus_window(&mut self, window: &Window) {
-        let Some(surface) = window.toplevel().map(|t| t.wl_surface().clone()) else {
-            return;
-        };
+    /// Make `window` active: raise it to the top of the stack, mark it as
+    /// activated (and every other window as not), give it keyboard focus, and
+    /// let clients learn the new state via a configure.
+    pub fn activate_window(&mut self, window: &Window) {
+        self.space.raise_element(window, true);
+
+        let surface = window.toplevel().map(|t| t.wl_surface().clone());
         let serial = SERIAL_COUNTER.next_serial();
         self.seat
             .get_keyboard()
             .unwrap()
-            .set_focus(self, Some(surface), serial);
+            .set_focus(self, surface, serial);
+
+        for element in self.space.elements() {
+            if let Some(toplevel) = element.toplevel() {
+                toplevel.send_pending_configure();
+            }
+        }
     }
 
     /// Where a newly opened window should be placed: cascaded from the top-left
