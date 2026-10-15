@@ -153,4 +153,13 @@ if [ "$((x1 - x0))" -ne 32 ] || [ "$((y1 - y0))" -ne 32 ]; then
 fi
 echo "ok: cascade offset window0=($x0,$y0) window1=($x1,$y1)"
 
-echo "PASS: control socket works; workspace, window count, focus-on-open, move and cascade verified"
+# Phase 4: ask a window to close.
+check "close 99" "err no such window"
+check "close 1" "ok"
+for _ in $(seq 1 40); do
+  [ "$(ctl windows)" = "ok 1" ] && break
+  sleep 0.25
+done
+check "windows" "ok 1"
+
+echo "PASS: control socket works; workspace, count, focus-on-open, move, cascade and close verified"

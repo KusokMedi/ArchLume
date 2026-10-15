@@ -19,6 +19,7 @@
 //! | `move <n>`     | `ok <n>` or `err no focused window` |
 //! | `windows`      | `ok <count>`                      |
 //! | `window <i>`   | `ok <x> <y> <w> <h>` or `err no such window` |
+//! | `close <i>`    | `ok` or `err no such window`      |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
@@ -46,6 +47,7 @@ pub enum Command {
     MoveFocusedWindow { number: usize, reply: Reply },
     ListWindows(Reply),
     WindowGeometry { index: usize, reply: Reply },
+    CloseWindow { index: usize, reply: Reply },
 }
 
 /// Running control server. Keeps the socket path; the accept thread is
@@ -135,6 +137,10 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
             let index = parts.next()?.parse::<usize>().ok()?;
             Some(Command::WindowGeometry { index, reply })
         }
+        "close" => {
+            let index = parts.next()?.parse::<usize>().ok()?;
+            Some(Command::CloseWindow { index, reply })
+        }
         _ => None,
     }
 }
@@ -177,6 +183,17 @@ pub fn handle(command: Command, state: &mut ArchLume) {
             match geometry {
                 Some((x, y, w, h)) => {
                     let _ = reply.send(format!("ok {x} {y} {w} {h}"));
+                }
+                None => {
+                    let _ = reply.send("err no such window".to_string());
+                }
+            }
+        }
+        Command::CloseWindow { index, reply } => {
+            let window = state.space.elements().nth(index).cloned();
+            match window.and_then(|window| window.toplevel().map(|t| t.send_close())) {
+                Some(()) => {
+                    let _ = reply.send("ok".to_string());
                 }
                 None => {
                     let _ = reply.send("err no such window".to_string());
