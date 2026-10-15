@@ -101,6 +101,13 @@ pub fn resolve(pos: (f64, f64), output: Rect, band: f64) -> Option<(SnapZone, Re
     zone_for(pos, output, band).map(|zone| (zone, geometry_for(zone, output)))
 }
 
+/// Whether a window rectangle's centre lies inside a workspace region on the
+/// horizontal axis. Workspaces are laid out side by side, so only `x` matters.
+pub fn in_region(rect: Rect, region_x: f64, region_w: f64) -> bool {
+    let centre_x = rect.x + rect.w / 2.0;
+    centre_x >= region_x && centre_x < region_x + region_w
+}
+
 /// Remembers the floating size of each snapped window so the compositor can
 /// restore it when the window is dragged back to the centre (un-snap, AGENTS
 /// section 6.3). Keyed by an arbitrary window identity supplied by the caller.
@@ -321,5 +328,28 @@ mod tests {
 
     fn wm_snap_memory() -> SnapMemory<u32> {
         SnapMemory::<u32>::new()
+    }
+
+    #[test]
+    fn region_membership_uses_centre() {
+        let r = Rect {
+            x: 100.0,
+            y: 0.0,
+            w: 200.0,
+            h: 100.0,
+        }; // centre x = 200
+        assert!(in_region(r, 0.0, 500.0));
+        assert!(in_region(r, 150.0, 500.0));
+        assert!(!in_region(r, 500.0, 500.0));
+        // A window straddling the boundary belongs to the region holding its
+        // centre.
+        let straddle = Rect {
+            x: 450.0,
+            y: 0.0,
+            w: 200.0,
+            h: 100.0,
+        }; // centre = 550
+        assert!(in_region(straddle, 500.0, 500.0));
+        assert!(!in_region(straddle, 0.0, 500.0));
     }
 }

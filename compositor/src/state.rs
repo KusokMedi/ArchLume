@@ -13,7 +13,7 @@ use smithay::{
             Display, DisplayHandle, Resource,
         },
     },
-    utils::{Logical, Point, Size},
+    utils::{Logical, Point, Size, SERIAL_COUNTER},
     wayland::{
         compositor::{CompositorClientState, CompositorState},
         output::OutputManagerState,
@@ -231,10 +231,47 @@ impl ArchLume {
     pub fn switch_workspace(&mut self, index: usize) -> bool {
         if self.workspaces.switch_to(index) {
             self.apply_workspace_offset();
+            self.refocus_active_workspace();
             true
         } else {
             false
         }
+    }
+
+    /// Move keyboard focus to the topmost window on the active workspace, or
+    /// clear it when the workspace is empty. Without this, focus would stay on
+    /// a window that just left the screen.
+    pub fn refocus_active_workspace(&mut self) {
+        let region_x = self.workspaces.current_offset() as f64;
+        let region_w = self.workspaces.stride() as f64;
+
+        let candidate = self
+            .space
+            .elements()
+            .rev()
+            .find(|window| {
+                self.space.element_location(window).is_some_and(|loc| {
+                    let geo = window.geometry();
+                    wm::in_region(
+                        wm::Rect {
+                            x: loc.x as f64,
+                            y: loc.y as f64,
+                            w: geo.size.w as f64,
+                            h: geo.size.h as f64,
+                        },
+                        region_x,
+                        region_w,
+                    )
+                })
+            })
+            .cloned();
+
+        let focus = candidate.and_then(|window| window.toplevel().map(|t| t.wl_surface().clone()));
+        let serial = SERIAL_COUNTER.next_serial();
+        self.seat
+            .get_keyboard()
+            .unwrap()
+            .set_focus(self, focus, serial);
     }
 
     /// Move the currently focused window to workspace `index` and switch to it

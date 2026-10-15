@@ -85,6 +85,10 @@ is pure and unit-tested; the keyboard bindings compile and are wired but have
 not yet been exercised at runtime (the nested winit backend cannot feed
 synthetic key events to the compositor).
 
+Switching workspaces also re-targets keyboard focus to the topmost window on
+the new workspace (or clears it), so typing does not go to an off-screen
+window (`wm::in_region`, unit-tested).
+
 Un-snap restore is implemented: `wm::SnapMemory` remembers each window's
 floating size when it is first snapped, and a drop in the centre restores that
 size (unit-tested). Its bookkeeping is pure; the grab integration compiles and
