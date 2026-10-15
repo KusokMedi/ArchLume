@@ -119,30 +119,46 @@ fn handle_connection(stream: UnixStream, tx: ControlSender<Command>) {
     }
 }
 
-fn parse(line: &str, reply: Reply) -> Option<Command> {
+/// A parsed request, before it is paired with a reply channel. Kept separate
+/// from [`Command`] so parsing is pure and unit-testable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Request {
+    Ping,
+    CurrentWorkspace,
+    ListWindows,
+    Switch(usize),
+    Move(usize),
+    Window(usize),
+    Close(usize),
+}
+
+fn parse_request(line: &str) -> Option<Request> {
+    fn number(parts: &mut std::str::SplitWhitespace<'_>) -> Option<usize> {
+        parts.next()?.parse().ok()
+    }
     let mut parts = line.split_whitespace();
     match parts.next()? {
-        "ping" => Some(Command::Ping(reply)),
-        "workspace" => Some(Command::CurrentWorkspace(reply)),
-        "windows" => Some(Command::ListWindows(reply)),
-        "switch" => {
-            let number = parts.next()?.parse::<usize>().ok()?;
-            Some(Command::SwitchWorkspace { number, reply })
-        }
-        "move" => {
-            let number = parts.next()?.parse::<usize>().ok()?;
-            Some(Command::MoveFocusedWindow { number, reply })
-        }
-        "window" => {
-            let index = parts.next()?.parse::<usize>().ok()?;
-            Some(Command::WindowGeometry { index, reply })
-        }
-        "close" => {
-            let index = parts.next()?.parse::<usize>().ok()?;
-            Some(Command::CloseWindow { index, reply })
-        }
+        "ping" => Some(Request::Ping),
+        "workspace" => Some(Request::CurrentWorkspace),
+        "windows" => Some(Request::ListWindows),
+        "switch" => Some(Request::Switch(number(&mut parts)?)),
+        "move" => Some(Request::Move(number(&mut parts)?)),
+        "window" => Some(Request::Window(number(&mut parts)?)),
+        "close" => Some(Request::Close(number(&mut parts)?)),
         _ => None,
     }
+}
+
+fn parse(line: &str, reply: Reply) -> Option<Command> {
+    Some(match parse_request(line)? {
+        Request::Ping => Command::Ping(reply),
+        Request::CurrentWorkspace => Command::CurrentWorkspace(reply),
+        Request::ListWindows => Command::ListWindows(reply),
+        Request::Switch(number) => Command::SwitchWorkspace { number, reply },
+        Request::Move(number) => Command::MoveFocusedWindow { number, reply },
+        Request::Window(index) => Command::WindowGeometry { index, reply },
+        Request::Close(index) => Command::CloseWindow { index, reply },
+    })
 }
 
 /// Execute a control command against the compositor and send the reply. Called
@@ -211,4 +227,38 @@ fn workspace_number(state: &ArchLume) -> usize {
 /// Convert a 1-based workspace number from the protocol to a 0-based index.
 fn index_of(number: usize) -> usize {
     number.saturating_sub(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_request;
+    use super::Request::*;
+
+    #[test]
+    fn parses_argumentless_commands() {
+        assert_eq!(parse_request("ping"), Some(Ping));
+        assert_eq!(parse_request("workspace"), Some(CurrentWorkspace));
+        assert_eq!(parse_request("windows"), Some(ListWindows));
+        // Surrounding whitespace is ignored.
+        assert_eq!(parse_request("  ping  "), Some(Ping));
+    }
+
+    #[test]
+    fn parses_commands_with_arguments() {
+        assert_eq!(parse_request("switch 5"), Some(Switch(5)));
+        assert_eq!(parse_request("move 10"), Some(Move(10)));
+        assert_eq!(parse_request("window 3"), Some(Window(3)));
+        assert_eq!(parse_request("close 0"), Some(Close(0)));
+        // Extra tokens are ignored.
+        assert_eq!(parse_request("switch 5 extra"), Some(Switch(5)));
+    }
+
+    #[test]
+    fn rejects_bad_input() {
+        assert_eq!(parse_request(""), None);
+        assert_eq!(parse_request("bogus"), None);
+        assert_eq!(parse_request("switch"), None);
+        assert_eq!(parse_request("switch abc"), None);
+        assert_eq!(parse_request("switch -1"), None);
+    }
 }
