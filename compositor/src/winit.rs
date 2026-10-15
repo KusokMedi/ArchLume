@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use smithay::{
     backend::{
@@ -82,6 +82,8 @@ pub fn init_winit(
                     let size = backend.window_size();
                     let damage = Rectangle::from_size(size);
 
+                    let frame_start = Instant::now();
+
                     {
                         let (renderer, mut framebuffer) = backend.bind().unwrap();
                         smithay::desktop::space::render_output::<
@@ -103,6 +105,8 @@ pub fn init_winit(
                         .unwrap();
                     }
                     backend.submit(Some(&[damage])).unwrap();
+
+                    state.frame_stats.record(frame_start.elapsed());
 
                     state.space.elements().for_each(|window| {
                         window.send_frame(

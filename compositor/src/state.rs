@@ -25,6 +25,7 @@ use smithay::{
 };
 
 use crate::{
+    stats::FrameStats,
     wm::{self, SnapZone},
     workspace::Workspaces,
     CalloopData,
@@ -44,6 +45,8 @@ pub struct ArchLume {
     pub workspaces: Workspaces,
     /// Floating sizes remembered for snapped windows (un-snap restore).
     pub snap_memory: wm::SnapMemory<ObjectId>,
+    /// Rolling frame-time statistics for the render loop.
+    pub frame_stats: FrameStats,
 
     // Smithay state
     pub compositor_state: CompositorState,
@@ -99,6 +102,7 @@ impl ArchLume {
             output: None,
             workspaces: Workspaces::new(1),
             snap_memory: wm::SnapMemory::new(),
+            frame_stats: FrameStats::new(),
             socket_name,
 
             compositor_state,

@@ -162,4 +162,13 @@ for _ in $(seq 1 40); do
 done
 check "windows" "ok 1"
 
-echo "PASS: control socket works; workspace, count, focus-on-open, move, cascade and close verified"
+# Phase 5: the render loop reports frame-time statistics.
+stats="$(ctl stats)"
+if ! printf '%s' "$stats" | grep -Eq '^ok frames [0-9]+ mean [0-9]+ max [0-9]+$'; then
+  fail "stats -> '$stats'"
+fi
+frames="$(printf '%s' "$stats" | sed -E 's/^ok frames ([0-9]+).*/\1/')"
+[ "$frames" -gt 0 ] || fail "stats reported no frames: '$stats'"
+echo "ok: stats -> $stats"
+
+echo "PASS: control socket works; workspace, count, focus-on-open, move, cascade, close and frame stats verified"

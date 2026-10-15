@@ -20,6 +20,7 @@
 //! | `windows`      | `ok <count>`                      |
 //! | `window <i>`   | `ok <x> <y> <w> <h>` or `err no such window` |
 //! | `close <i>`    | `ok` or `err no such window`      |
+//! | `stats`        | `ok frames <n> mean <us> max <us>` |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
@@ -48,6 +49,7 @@ pub enum Command {
     ListWindows(Reply),
     WindowGeometry { index: usize, reply: Reply },
     CloseWindow { index: usize, reply: Reply },
+    FrameStats(Reply),
 }
 
 /// Running control server. Keeps the socket path; the accept thread is
@@ -130,6 +132,7 @@ enum Request {
     Move(usize),
     Window(usize),
     Close(usize),
+    Stats,
 }
 
 fn parse_request(line: &str) -> Option<Request> {
@@ -145,6 +148,7 @@ fn parse_request(line: &str) -> Option<Request> {
         "move" => Some(Request::Move(number(&mut parts)?)),
         "window" => Some(Request::Window(number(&mut parts)?)),
         "close" => Some(Request::Close(number(&mut parts)?)),
+        "stats" => Some(Request::Stats),
         _ => None,
     }
 }
@@ -158,6 +162,7 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
         Request::Move(number) => Command::MoveFocusedWindow { number, reply },
         Request::Window(index) => Command::WindowGeometry { index, reply },
         Request::Close(index) => Command::CloseWindow { index, reply },
+        Request::Stats => Command::FrameStats(reply),
     })
 }
 
@@ -216,6 +221,15 @@ pub fn handle(command: Command, state: &mut ArchLume) {
                 }
             }
         }
+        Command::FrameStats(reply) => {
+            let stats = &state.frame_stats;
+            let _ = reply.send(format!(
+                "ok frames {} mean {} max {}",
+                stats.frames(),
+                stats.mean_us(),
+                stats.max_us()
+            ));
+        }
     }
 }
 
@@ -239,6 +253,7 @@ mod tests {
         assert_eq!(parse_request("ping"), Some(Ping));
         assert_eq!(parse_request("workspace"), Some(CurrentWorkspace));
         assert_eq!(parse_request("windows"), Some(ListWindows));
+        assert_eq!(parse_request("stats"), Some(Stats));
         // Surrounding whitespace is ignored.
         assert_eq!(parse_request("  ping  "), Some(Ping));
     }

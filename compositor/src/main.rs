@@ -19,6 +19,7 @@ mod grabs;
 mod handlers;
 mod input;
 mod state;
+mod stats;
 mod winit;
 mod wm;
 mod workspace;
