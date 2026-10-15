@@ -1,7 +1,7 @@
 use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-        KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
     },
     input::{
         keyboard::FilterResult,
@@ -19,14 +19,31 @@ impl ArchLume {
             InputEvent::Keyboard { event, .. } => {
                 let serial = SERIAL_COUNTER.next_serial();
                 let time = Event::time_msec(&event);
+                let key_state = event.state();
 
                 self.seat.get_keyboard().unwrap().input::<(), _>(
                     self,
                     event.key_code(),
-                    event.state(),
+                    key_state,
                     serial,
                     time,
-                    |_, _, _| FilterResult::Forward,
+                    |state, modifiers, keysym| {
+                        // Super + digit selects a workspace; Shift + Super +
+                        // digit moves the focused window there (AGENTS 6.4).
+                        if matches!(key_state, KeyState::Pressed) && modifiers.logo {
+                            if let Some(index) =
+                                crate::workspace::index_for_digit(keysym.modified_sym().raw())
+                            {
+                                if modifiers.shift {
+                                    state.move_focused_window_to_workspace(index);
+                                } else {
+                                    state.switch_workspace(index);
+                                }
+                                return FilterResult::Intercept(());
+                            }
+                        }
+                        FilterResult::Forward
+                    },
                 );
             }
             InputEvent::PointerMotion { .. } => {}

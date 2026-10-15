@@ -19,6 +19,7 @@ mod input;
 mod state;
 mod winit;
 mod wm;
+mod workspace;
 
 use smithay::reexports::{
     calloop::EventLoop,

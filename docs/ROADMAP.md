@@ -76,8 +76,17 @@ with drag-to-edge snapping: top edge maximizes, left/right edges snap to halves,
 and corners snap to quarters. The zone/geometry logic is pure and unit-tested;
 the move grab applies the resulting xdg_toplevel configure on drop.
 
-Still to come: native DRM/libseat startup, workspaces, gestures, snap preview,
-and a way to un-snap back to the previous floating geometry.
+Fixed workspaces (AGENTS 6.4) are implemented in `compositor/src/workspace.rs`:
+ten workspaces are modelled as horizontal regions of the space and switching
+moves the output's view, so windows stay mapped and frame/commit handling is
+unchanged. `Super + 1..9`/`0` selects a workspace and `Shift + Super + digit`
+moves the focused window to a workspace and follows it. The index/offset logic
+is pure and unit-tested; the keyboard bindings compile and are wired but have
+not yet been exercised at runtime (the nested winit backend cannot feed
+synthetic key events to the compositor).
+
+Still to come: native DRM/libseat startup, gestures, snap preview, and a way to
+un-snap back to the previous floating geometry.
 
 Deliverables
 - Smithay-based compositor: session startup, outputs, input, surfaces, basic

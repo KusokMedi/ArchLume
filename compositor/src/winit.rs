@@ -47,7 +47,11 @@ pub fn init_winit(
     );
     output.set_preferred(mode);
 
-    state.space.map_output(&output, (0, 0));
+    state.workspaces.set_stride(mode.size.w);
+    state.output = Some(output.clone());
+    state
+        .space
+        .map_output(&output, (state.workspaces.current_offset(), 0));
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
 
@@ -70,6 +74,8 @@ pub fn init_winit(
                         None,
                         None,
                     );
+                    state.workspaces.set_stride(size.w);
+                    state.apply_workspace_offset();
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Redraw => {

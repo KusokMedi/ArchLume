@@ -3,6 +3,7 @@ use std::{ffi::OsString, sync::Arc};
 use smithay::{
     desktop::{PopupManager, Space, Window, WindowSurfaceType},
     input::{Seat, SeatState},
+    output::Output,
     reexports::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
         wayland_protocols::xdg::shell::server::xdg_toplevel,
@@ -25,6 +26,7 @@ use smithay::{
 
 use crate::{
     wm::{self, SnapZone},
+    workspace::Workspaces,
     CalloopData,
 };
 
@@ -35,6 +37,11 @@ pub struct ArchLume {
 
     pub space: Space<Window>,
     pub loop_signal: LoopSignal,
+
+    /// The primary output, stored so workspace switching can move its view.
+    pub output: Option<Output>,
+    /// Fixed workspaces and the currently active one.
+    pub workspaces: Workspaces,
 
     // Smithay state
     pub compositor_state: CompositorState,
@@ -87,6 +94,8 @@ impl ArchLume {
 
             space,
             loop_signal,
+            output: None,
+            workspaces: Workspaces::new(1),
             socket_name,
 
             compositor_state,
@@ -180,6 +189,49 @@ impl ArchLume {
         }
 
         self.space.map_element(window.clone(), location, true);
+    }
+
+    /// Move the output's view to the active workspace's region.
+    pub fn apply_workspace_offset(&mut self) {
+        if let Some(output) = self.output.clone() {
+            let x = self.workspaces.current_offset();
+            self.space.map_output(&output, (x, 0));
+        }
+    }
+
+    /// Switch to a workspace by zero-based index. Returns whether the active
+    /// workspace changed.
+    pub fn switch_workspace(&mut self, index: usize) -> bool {
+        if self.workspaces.switch_to(index) {
+            self.apply_workspace_offset();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Move the currently focused window to workspace `index` and switch to it
+    /// (AGENTS section 6.4: `Shift + Super + digit`).
+    pub fn move_focused_window_to_workspace(&mut self, index: usize) -> bool {
+        let Some(surface) = self.seat.get_keyboard().unwrap().current_focus() else {
+            return false;
+        };
+        let window = self
+            .space
+            .elements()
+            .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == &surface))
+            .cloned();
+        let Some(window) = window else {
+            return false;
+        };
+        let Some(location) = self.space.element_location(&window) else {
+            return false;
+        };
+
+        let target_x = self.workspaces.offset_of(index);
+        self.space.map_element(window, (target_x, location.y), true);
+        self.switch_workspace(index);
+        true
     }
 }
 
