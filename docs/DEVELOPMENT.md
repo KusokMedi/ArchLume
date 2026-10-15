@@ -82,8 +82,11 @@ just control-test   # drive workspace state over the control socket
 
 The compositor exposes a line-based control socket at
 `$XDG_RUNTIME_DIR/archlume-control.sock` (path also in `$ARCHLUME_CONTROL`); see
-`compositor/src/control.rs` and ADR-0007. `just control-test` uses it to verify
-workspace switching at runtime without needing to inject input events.
+`compositor/src/control.rs` and ADR-0007. Commands: `ping`, `workspace`,
+`switch <n>`, `move <n>`, `windows`, `window <i>`, `close <i>`, `stats`.
+`just control-test` uses it to verify workspace switching, window counting,
+focus-on-open, moving a window, cascade placement, close and frame stats at
+runtime without needing to inject input events.
 
 (Native DRM/libseat operation is a Milestone 4 deliverable and is only tested on
 dedicated hardware or in a VM, never on the development host's session. See

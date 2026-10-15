@@ -105,9 +105,15 @@ shell and tests drive the compositor. `scripts/control-test.sh`
 (`just control-test`) starts the compositor nested, switches workspaces over the
 socket, launches real clients, and checks window counting, focus-on-open,
 moving a focused window to another workspace, and that two new windows cascade
-(offset by `wm::CASCADE_STEP`). Workspace switching, window tracking,
-focus-on-open and cascade placement are therefore verified at runtime, not only
-in unit tests.
+(offset by `wm::CASCADE_STEP`), and that closing a window works. Workspace
+switching, window tracking, focus-on-open, cascade placement and close are
+therefore verified at runtime, not only in unit tests.
+
+The render loop also feeds a rolling `FrameStats` (120-frame window,
+`compositor/src/stats.rs`), reported over the socket as
+`stats -> ok frames <n> mean <us> max <us>`. This gives an early frame-time
+measurement (a nested run measured mean ~2 ms, max ~9 ms at 60 Hz, within the
+16.67 ms budget) and a hook for the shell's diagnostics.
 
 Still to come: native DRM/libseat startup (plan in `docs/NATIVE-BACKEND.md`),
 gestures, and snap preview.
