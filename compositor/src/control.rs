@@ -18,6 +18,7 @@
 //! | `switch <n>`   | `ok <n> changed|same`             |
 //! | `move <n>`     | `ok <n>` or `err no focused window` |
 //! | `windows`      | `ok <count>`                      |
+//! | `window <i>`   | `ok <x> <y> <w> <h>` or `err no such window` |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
@@ -44,6 +45,7 @@ pub enum Command {
     SwitchWorkspace { number: usize, reply: Reply },
     MoveFocusedWindow { number: usize, reply: Reply },
     ListWindows(Reply),
+    WindowGeometry { index: usize, reply: Reply },
 }
 
 /// Running control server. Keeps the socket path; the accept thread is
@@ -129,6 +131,10 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
             let number = parts.next()?.parse::<usize>().ok()?;
             Some(Command::MoveFocusedWindow { number, reply })
         }
+        "window" => {
+            let index = parts.next()?.parse::<usize>().ok()?;
+            Some(Command::WindowGeometry { index, reply })
+        }
         _ => None,
     }
 }
@@ -161,6 +167,21 @@ pub fn handle(command: Command, state: &mut ArchLume) {
         Command::ListWindows(reply) => {
             let count = state.space.elements().count();
             let _ = reply.send(format!("ok {count}"));
+        }
+        Command::WindowGeometry { index, reply } => {
+            let geometry = state.space.elements().nth(index).and_then(|window| {
+                let location = state.space.element_location(window)?;
+                let size = window.geometry().size;
+                Some((location.x, location.y, size.w, size.h))
+            });
+            match geometry {
+                Some((x, y, w, h)) => {
+                    let _ = reply.send(format!("ok {x} {y} {w} {h}"));
+                }
+                None => {
+                    let _ = reply.send("err no such window".to_string());
+                }
+            }
         }
     }
 }

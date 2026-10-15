@@ -100,10 +100,11 @@ runtime.
 A line-based control socket (`compositor/src/control.rs`, ADR-0007) lets the
 shell and tests drive the compositor. `scripts/control-test.sh`
 (`just control-test`) starts the compositor nested, switches workspaces over the
-socket, launches a real client, and checks window counting, focus-on-open and
-moving a focused window to another workspace. Workspace switching, window
-tracking and focus-on-open are therefore verified at runtime, not only in unit
-tests.
+socket, launches real clients, and checks window counting, focus-on-open,
+moving a focused window to another workspace, and that two new windows cascade
+(offset by `wm::CASCADE_STEP`). Workspace switching, window tracking,
+focus-on-open and cascade placement are therefore verified at runtime, not only
+in unit tests.
 
 Still to come: native DRM/libseat startup (plan in `docs/NATIVE-BACKEND.md`),
 gestures, and snap preview.

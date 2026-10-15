@@ -28,6 +28,9 @@ SOCK="$RT/archlume-control.sock"
 cleanup() {
   pkill -f "$PAT" 2>/dev/null || true
   pkill -x "$CLIENT" 2>/dev/null || true
+  # The clients are launched as `$CLIENT sh -c 'sleep 30'`; kill the detached
+  # sleep children too so the script (and its caller) can exit promptly.
+  pkill -f 'sleep 3[0]' 2>/dev/null || true
   rm -rf "$RT"
 }
 trap cleanup EXIT
@@ -114,4 +117,40 @@ check "windows" "ok 1"
 check "switch 1" "ok 1 changed"
 check "switch 2" "ok 2 changed"
 
-echo "PASS: control socket works; workspace, window count, focus-on-open and move verified"
+# Phase 3: cascade placement of two fresh clients on one workspace.
+pkill -x "$CLIENT" 2>/dev/null || true
+for _ in $(seq 1 20); do
+  [ "$(ctl windows)" = "ok 0" ] && break
+  sleep 0.25
+done
+check "windows" "ok 0"
+check "switch 1" "ok 1 changed"
+
+launch_client() {
+  XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY="$sock_name" \
+    setsid --fork "$CLIENT" sh -c 'sleep 30' < /dev/null >> "$CLIENT_LOG" 2>&1
+}
+wait_for_windows() {
+  for _ in $(seq 1 40); do
+    [ "$(ctl windows)" = "ok $1" ] && return 0
+    sleep 0.25
+  done
+  fail "expected $1 window(s)"
+}
+
+launch_client
+wait_for_windows 1
+launch_client
+wait_for_windows 2
+
+check "window 99" "err no such window"
+
+# The two windows must be cascaded by CASCADE_STEP (32) in x and y.
+read -r _ x0 y0 _ _ <<< "$(ctl 'window 0')"
+read -r _ x1 y1 _ _ <<< "$(ctl 'window 1')"
+if [ "$((x1 - x0))" -ne 32 ] || [ "$((y1 - y0))" -ne 32 ]; then
+  fail "cascade offset wrong: window0=($x0,$y0) window1=($x1,$y1)"
+fi
+echo "ok: cascade offset window0=($x0,$y0) window1=($x1,$y1)"
+
+echo "PASS: control socket works; workspace, window count, focus-on-open, move and cascade verified"
