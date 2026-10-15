@@ -85,8 +85,13 @@ is pure and unit-tested; the keyboard bindings compile and are wired but have
 not yet been exercised at runtime (the nested winit backend cannot feed
 synthetic key events to the compositor).
 
-Still to come: native DRM/libseat startup, gestures, snap preview, and a way to
-un-snap back to the previous floating geometry.
+Un-snap restore is implemented: `wm::SnapMemory` remembers each window's
+floating size when it is first snapped, and a drop in the centre restores that
+size (unit-tested). Its bookkeeping is pure; the grab integration compiles and
+smoke-tests but the exact drop interaction has not yet been exercised at
+runtime.
+
+Still to come: native DRM/libseat startup, gestures, and snap preview.
 
 Deliverables
 - Smithay-based compositor: session startup, outputs, input, surfaces, basic

@@ -8,9 +8,9 @@ use smithay::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
-            backend::{ClientData, ClientId, DisconnectReason},
+            backend::{ClientData, ClientId, DisconnectReason, ObjectId},
             protocol::wl_surface::WlSurface,
-            Display, DisplayHandle,
+            Display, DisplayHandle, Resource,
         },
     },
     utils::{Logical, Point, Size},
@@ -42,6 +42,8 @@ pub struct ArchLume {
     pub output: Option<Output>,
     /// Fixed workspaces and the currently active one.
     pub workspaces: Workspaces,
+    /// Floating sizes remembered for snapped windows (un-snap restore).
+    pub snap_memory: wm::SnapMemory<ObjectId>,
 
     // Smithay state
     pub compositor_state: CompositorState,
@@ -96,6 +98,7 @@ impl ArchLume {
             loop_signal,
             output: None,
             workspaces: Workspaces::new(1),
+            snap_memory: wm::SnapMemory::new(),
             socket_name,
 
             compositor_state,
@@ -177,6 +180,12 @@ impl ArchLume {
             .into();
 
         if let Some(toplevel) = window.toplevel() {
+            // Remember the floating size so dragging back to the centre can
+            // restore it (only the first time the window is snapped).
+            let floating = window.geometry().size;
+            self.snap_memory
+                .remember(toplevel.wl_surface().id(), (floating.w, floating.h));
+
             toplevel.with_pending_state(|state| {
                 state.size = Some(size);
                 if zone.is_maximized() {
@@ -189,6 +198,24 @@ impl ArchLume {
         }
 
         self.space.map_element(window.clone(), location, true);
+    }
+
+    /// Restore a snapped window to its remembered floating size (un-snap). The
+    /// window stays wherever the drag left it; only its size is configured
+    /// back.
+    pub fn un_snap_window(&mut self, window: &Window) {
+        let Some(toplevel) = window.toplevel() else {
+            return;
+        };
+        let Some((w, h)) = self.snap_memory.restore(&toplevel.wl_surface().id()) else {
+            return;
+        };
+
+        toplevel.with_pending_state(|state| {
+            state.size = Some((w.max(1), h.max(1)).into());
+            state.states.unset(xdg_toplevel::State::Maximized);
+        });
+        let _serial = toplevel.send_configure();
     }
 
     /// Move the output's view to the active workspace's region.

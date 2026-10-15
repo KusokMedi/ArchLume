@@ -81,8 +81,11 @@ impl PointerGrab<ArchLume> for MoveSurfaceGrab {
                         output_rect,
                         wm::DEFAULT_BAND_FRACTION,
                     );
-                    if let Some((zone, geometry)) = target {
-                        data.snap_window(&self.window, zone, geometry);
+                    match target {
+                        Some((zone, geometry)) => data.snap_window(&self.window, zone, geometry),
+                        // Dropped in the centre: restore the floating size if the
+                        // window was snapped (un-snap).
+                        None => data.un_snap_window(&self.window),
                     }
                 }
             }

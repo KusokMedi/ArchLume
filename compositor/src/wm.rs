@@ -101,6 +101,53 @@ pub fn resolve(pos: (f64, f64), output: Rect, band: f64) -> Option<(SnapZone, Re
     zone_for(pos, output, band).map(|zone| (zone, geometry_for(zone, output)))
 }
 
+/// Remembers the floating size of each snapped window so the compositor can
+/// restore it when the window is dragged back to the centre (un-snap, AGENTS
+/// section 6.3). Keyed by an arbitrary window identity supplied by the caller.
+///
+/// The first size recorded for a window is kept: repeatedly re-snapping an
+/// already-snapped window must not overwrite the original floating size.
+#[derive(Debug, Clone)]
+pub struct SnapMemory<K> {
+    floating: std::collections::HashMap<K, (i32, i32)>,
+}
+
+impl<K> Default for SnapMemory<K> {
+    fn default() -> Self {
+        Self {
+            floating: std::collections::HashMap::new(),
+        }
+    }
+}
+
+impl<K> SnapMemory<K> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<K: Eq + std::hash::Hash> SnapMemory<K> {
+    /// Record `size` as the window's floating size, unless one is already known.
+    pub fn remember(&mut self, key: K, size: (i32, i32)) {
+        self.floating.entry(key).or_insert(size);
+    }
+
+    /// Whether the window is currently snapped (has a remembered floating size).
+    pub fn is_snapped(&self, key: &K) -> bool {
+        self.floating.contains_key(key)
+    }
+
+    /// Take and forget the remembered floating size, if any.
+    pub fn restore(&mut self, key: &K) -> Option<(i32, i32)> {
+        self.floating.remove(key)
+    }
+
+    /// Forget the window without restoring (e.g. it was closed).
+    pub fn forget(&mut self, key: &K) {
+        self.floating.remove(key);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,5 +297,29 @@ mod tests {
             zone_for((105.0, 400.0), shifted, DEFAULT_BAND_FRACTION),
             Some(SnapZone::LeftHalf)
         );
+    }
+
+    #[test]
+    fn snap_memory_remembers_first_size() {
+        let mut mem = wm_snap_memory();
+        assert!(!mem.is_snapped(&1));
+        mem.remember(1, (800, 600));
+        mem.remember(1, (400, 300)); // re-snap must not overwrite
+        assert!(mem.is_snapped(&1));
+        assert_eq!(mem.restore(&1), Some((800, 600)));
+        assert!(!mem.is_snapped(&1));
+        assert_eq!(mem.restore(&1), None);
+    }
+
+    #[test]
+    fn snap_memory_forget_keeps_nothing() {
+        let mut mem = wm_snap_memory();
+        mem.remember(2, (640, 480));
+        mem.forget(&2);
+        assert!(!mem.is_snapped(&2));
+    }
+
+    fn wm_snap_memory() -> SnapMemory<u32> {
+        SnapMemory::<u32>::new()
     }
 }
