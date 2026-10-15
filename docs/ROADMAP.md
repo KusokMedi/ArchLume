@@ -97,7 +97,8 @@ size (unit-tested). Its bookkeeping is pure; the grab integration compiles and
 smoke-tests but the exact drop interaction has not yet been exercised at
 runtime.
 
-Still to come: native DRM/libseat startup, gestures, and snap preview.
+Still to come: native DRM/libseat startup (plan in `docs/NATIVE-BACKEND.md`),
+gestures, and snap preview.
 
 Deliverables
 - Smithay-based compositor: session startup, outputs, input, surfaces, basic
