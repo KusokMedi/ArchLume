@@ -41,6 +41,10 @@ run-nested:
 smoke:
 	bash scripts/smoke-nested.sh
 
+# Boot the newest ISO in QEMU (UEFI) and verify the live environment via OCR
+boot-test:
+	bash scripts/boot-iso-qemu.sh
+
 # Build the archiso profile into iso/out/
 iso:
 	@command -v mkarchiso >/dev/null || { echo "mkarchiso not found (install the 'archiso' package)"; exit 1; }

@@ -89,8 +89,15 @@ the official Arch mirror CDN for reproducible builds.
 
 ```sh
 just iso            # sudo mkarchiso -v -w iso/work -o iso/out iso/profile
-just qemu           # boot the newest ISO with a disposable virtual disk
+just qemu           # boot the newest ISO with a disposable virtual disk (GPU)
+just boot-test      # headless boot check: capture the framebuffer + OCR it
 ```
+
+`just boot-test` boots the newest ISO under UEFI/OVMF with `-display none`,
+dumps the emulated framebuffer through the QEMU monitor (`screendump`), and
+verifies via `tesseract` that the live environment reached a shell. It requires
+KVM and `edk2-ovmf`. Override `ISO_FILE`, `BOOT_WAIT` (default 180s), or
+`MARKER` (an extended regex) via the environment.
 
 - `iso/work/` and `iso/out/` are build artifacts and are git-ignored.
 - For reproducible metadata, export `SOURCE_DATE_EPOCH` before building; the

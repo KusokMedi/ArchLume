@@ -38,9 +38,17 @@ Deliverables
   power-profiles-daemon, Mesa), systemd-boot UEFI path, hardware detection.
 
 Acceptance criteria
-- [ ] ISO builds reproducibly from a documented command (`just iso`).
-- [ ] ISO boots in QEMU (UEFI) to a working shell (`just qemu`).
-- [ ] Installation/boot test automated or documented with evidence.
+- [x] ISO builds reproducibly from a documented command (`just iso`).
+      Evidence (2026-10-15): `iso/out/archlume-2026.10.15-x86_64.iso`
+      (1.6 GiB), label `ARCHLUME_202610`, sha256
+      `d3f125d779cac0f9b052bb04ae5d58e168204c6efad803b40a8ed9c4da61cff1`.
+- [x] ISO boots in QEMU (UEFI) to a working shell (`just boot-test`).
+      Evidence (2026-10-15): `scripts/boot-iso-qemu.sh` PASS — the live
+      environment reached a root shell in QEMU/OVMF; OCR of the captured
+      framebuffer shows `archlume login: root (automatic login)` and the live
+      motd.
+- [ ] Installation test (installer lands in M7); boot test automated with
+      evidence (done).
 
 ## M3 — Package repository and CI
 
