@@ -28,6 +28,31 @@ pub fn index_for_digit(keysym: u32) -> Option<usize> {
     }
 }
 
+/// A workspace action triggered by a key binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    /// `Super + digit`: switch to the workspace.
+    Switch(usize),
+    /// `Shift + Super + digit`: move the focused window there and follow it.
+    MoveTo(usize),
+}
+
+/// Resolve a key event into a workspace action (AGENTS section 6.4).
+///
+/// Only `Super` (logo) combinations on a digit keysym, while the key is being
+/// pressed, produce an action; everything else is left for the client.
+pub fn action_for(keysym: u32, pressed: bool, logo: bool, shift: bool) -> Option<Action> {
+    if !pressed || !logo {
+        return None;
+    }
+    let index = index_for_digit(keysym)?;
+    Some(if shift {
+        Action::MoveTo(index)
+    } else {
+        Action::Switch(index)
+    })
+}
+
 /// Current workspace and the horizontal stride between workspaces (the output
 /// width).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,6 +150,15 @@ mod tests {
         assert!(ws.switch_by(1));
         assert_eq!(ws.current(), 0);
         assert!(!ws.switch_by(0));
+    }
+
+    #[test]
+    fn action_requires_super_and_press() {
+        assert_eq!(action_for(XK_1, true, true, false), Some(Action::Switch(0)));
+        assert_eq!(action_for(XK_0, true, true, true), Some(Action::MoveTo(9)));
+        assert_eq!(action_for(0x35, true, false, false), None); // no Super
+        assert_eq!(action_for(0x35, false, true, false), None); // released
+        assert_eq!(action_for(0x61, true, true, false), None); // not a digit
     }
 
     #[test]

@@ -30,17 +30,22 @@ impl ArchLume {
                     |state, modifiers, keysym| {
                         // Super + digit selects a workspace; Shift + Super +
                         // digit moves the focused window there (AGENTS 6.4).
-                        if matches!(key_state, KeyState::Pressed) && modifiers.logo {
-                            if let Some(index) =
-                                crate::workspace::index_for_digit(keysym.modified_sym().raw())
-                            {
-                                if modifiers.shift {
-                                    state.move_focused_window_to_workspace(index);
-                                } else {
+                        use crate::workspace::{action_for, Action};
+                        if let Some(action) = action_for(
+                            keysym.modified_sym().raw(),
+                            matches!(key_state, KeyState::Pressed),
+                            modifiers.logo,
+                            modifiers.shift,
+                        ) {
+                            match action {
+                                Action::Switch(index) => {
                                     state.switch_workspace(index);
                                 }
-                                return FilterResult::Intercept(());
+                                Action::MoveTo(index) => {
+                                    state.move_focused_window_to_workspace(index);
+                                }
                             }
+                            return FilterResult::Intercept(());
                         }
                         FilterResult::Forward
                     },

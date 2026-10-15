@@ -81,9 +81,10 @@ ten workspaces are modelled as horizontal regions of the space and switching
 moves the output's view, so windows stay mapped and frame/commit handling is
 unchanged. `Super + 1..9`/`0` selects a workspace and `Shift + Super + digit`
 moves the focused window to a workspace and follows it. The index/offset logic
-is pure and unit-tested; the keyboard bindings compile and are wired but have
-not yet been exercised at runtime (the nested winit backend cannot feed
-synthetic key events to the compositor).
+and the binding mapping (`workspace::action_for`) are pure and unit-tested, and
+the equivalent actions are verified at runtime over the control socket. The
+physical key bindings themselves have not been exercised at runtime, because the
+nested winit backend cannot feed synthetic key events to the compositor.
 
 Switching workspaces also re-targets keyboard focus to the topmost window on
 the new workspace (or clears it), so typing does not go to an off-screen
