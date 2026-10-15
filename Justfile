@@ -35,7 +35,11 @@ check: fmt-check lint test
 
 # Run the compositor nested in the current Wayland session (dev only)
 run-nested:
-	cargo run -p archlume-compositor -- --nested
+	cargo run -p archlume-compositor
+
+# Nested smoke test: start the compositor and verify a client maps a window
+smoke:
+	bash scripts/smoke-nested.sh
 
 # Build the archiso profile into iso/out/
 iso:

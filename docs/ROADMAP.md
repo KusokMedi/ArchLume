@@ -53,7 +53,14 @@ Acceptance criteria
 
 ## M4 — Wayland compositor foundation
 
-**Status: planned**
+**Status: in progress** (first nested slice exists, 2026-10-15)
+
+A minimal but real Smithay-based compositor lives under `compositor/`. It runs
+on the winit backend (nested), implements xdg-shell toplevels/popups,
+pointer/keyboard input, focus, and window move/resize grabs, and is verified by
+`scripts/smoke-nested.sh` (a client maps a window on the reference GPU). Native
+DRM/libseat startup, workspaces, gestures, and window-management policy (snap,
+maximize) are still to come.
 
 Deliverables
 - Smithay-based compositor: session startup, outputs, input, surfaces, basic

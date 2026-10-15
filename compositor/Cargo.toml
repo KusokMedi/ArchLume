@@ -1,0 +1,16 @@
+[package]
+name = "archlume-compositor"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "ArchLume Wayland compositor (Smithay-based)"
+publish = false
+
+[[bin]]
+name = "archlume-compositor"
+path = "src/main.rs"
+
+[dependencies]
+tracing-subscriber.workspace = true
+bitflags.workspace = true
+smithay.workspace = true
