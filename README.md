@@ -4,10 +4,13 @@ An Arch Linux-based distribution with an ArchLume-owned Wayland compositor and a
 coherent, Android-inspired desktop experience.
 
 > **Status: early development.**
-> The project is at **Milestone 1 (repository and build foundation)**. There is
-> no installable ISO yet. The acceptance target is a **verified alpha**, not a
-> mock-up. See [`docs/ROADMAP.md`](docs/ROADMAP.md). Nothing in this repository
-> should be treated as complete, released, or production-ready.
+> Milestone 1 (repository and build foundation) is in place, and Milestone 2
+> (base system / reproducible ISO) has a working `archiso` profile under `iso/`
+> (build/boot evidence pending). A minimal Smithay compositor runs nested.
+> There is **no verified installable ISO yet**. The acceptance target is a
+> **verified alpha**, not a mock-up. See [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> Nothing in this repository should be treated as complete, released, or
+> production-ready.
 
 ## What ArchLume is
 
@@ -39,12 +42,12 @@ be split out later when a concrete need justifies it (see
 
 | Path | Purpose | State |
 | --- | --- | --- |
-| `compositor/` | ArchLume Wayland compositor (Rust / Smithay) | planned |
+| `compositor/` | ArchLume Wayland compositor (Rust / Smithay) | in progress (nested) |
 | `shell/` | Desktop shell: panel, launcher, quick settings, notifications | planned |
 | `apps/` | First-party core applications (settings, terminal, files, ...) | planned |
 | `installer/` | Graphical installer and initial setup | planned |
 | `recovery/` | Recovery tools and ISO recovery workflow | planned |
-| `iso/` | Reproducible `archiso` profile | planned |
+| `iso/` | Reproducible `archiso` profile | in progress (profile) |
 | `packaging/` | Package metadata and PKGBUILDs | planned |
 | `extensions/` | Extension/theme SDK, templates, examples | planned |
 | `docs/` | Architecture, roadmap, developer docs, decision log | active |

@@ -83,10 +83,20 @@ dedicated hardware or in a VM, never on the development host's session.)
 
 ## 4. ISO build and QEMU testing
 
+The `archiso` profile lives in `iso/profile/` (derived from the upstream
+`releng` profile, UEFI/`systemd-boot` only, English live environment). It uses
+the official Arch mirror CDN for reproducible builds.
+
 ```sh
-just iso            # build the archiso profile into iso/out/
-just qemu           # boot the built ISO in QEMU with a disposable virtual disk
+just iso            # sudo mkarchiso -v -w iso/work -o iso/out iso/profile
+just qemu           # boot the newest ISO with a disposable virtual disk
 ```
+
+- `iso/work/` and `iso/out/` are build artifacts and are git-ignored.
+- For reproducible metadata, export `SOURCE_DATE_EPOCH` before building; the
+  profile derives the ISO version/label from it via `profiledef.sh`.
+- Building downloads packages from the mirrors in `iso/profile/pacman.conf`
+  and requires root (`mkarchiso`), so `just iso` uses `sudo`.
 
 QEMU uses a **disposable virtual disk**; the host disks are never passed
 through. UEFI is the first-class target (`edk2-ovmf`).

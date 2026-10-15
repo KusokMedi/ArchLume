@@ -11,7 +11,7 @@ Legend: `done` · `in progress` · `planned`
 
 ## M1 — Repository and build foundation
 
-**Status: in progress**
+**Status: done (local) — first CI run pending a push**
 
 Deliverables
 - Repository layout, README, architecture/roadmap/development docs, decision log.
@@ -20,23 +20,26 @@ Deliverables
 - CI skeleton.
 
 Acceptance criteria
-- [ ] Layout, docs, and ADRs committed.
-- [ ] Rust toolchain pinned and reproducible.
-- [ ] `just fmt`, `just lint`, `just test`, `just build` defined.
-- [ ] CI workflow runs and is honest about what it checks.
+- [x] Layout, docs, and ADRs committed (`ac9597f`).
+- [x] Rust toolchain pinned and reproducible (`rust-toolchain.toml`).
+- [x] `just fmt`, `just lint`, `just test`, `just build` defined.
+- [ ] CI workflow runs and is honest about what it checks. *(workflow committed;
+      not yet executed because the owner has no GitHub push auth — see
+      `docs/DECISIONS.md`.)*
 
 ## M2 — Base system and reproducible ISO
 
-**Status: planned**
+**Status: in progress** (profile added, 2026-10-15)
 
 Deliverables
-- Reproducible `archiso` profile under `iso/`.
+- Reproducible `archiso` profile under `iso/profile/` (UEFI / systemd-boot,
+  official Arch mirrors, ArchLume branding, English live motd).
 - Base packages/services (NetworkManager, PipeWire/WirePlumber, BlueZ,
   power-profiles-daemon, Mesa), systemd-boot UEFI path, hardware detection.
 
 Acceptance criteria
-- [ ] ISO builds reproducibly from a documented command.
-- [ ] ISO boots in QEMU (UEFI) to a working shell.
+- [ ] ISO builds reproducibly from a documented command (`just iso`).
+- [ ] ISO boots in QEMU (UEFI) to a working shell (`just qemu`).
 - [ ] Installation/boot test automated or documented with evidence.
 
 ## M3 — Package repository and CI

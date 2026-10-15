@@ -1,0 +1,10 @@
+ArchLume live environment.
+
+This is a pre-release build for development and testing. The installer and
+recovery tooling are under active development.
+
+For reference, the upstream Arch installation guide is available at:
+https://wiki.archlinux.org/title/Installation_guide
+
+For Wi-Fi, authenticate with the iwctl utility. Ethernet, WLAN and WWAN
+interfaces using DHCP should work automatically.
