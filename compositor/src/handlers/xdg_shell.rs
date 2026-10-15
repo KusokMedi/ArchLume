@@ -36,9 +36,11 @@ impl XdgShellHandler for ArchLume {
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::new_wayland_window(surface);
-        // Open new windows on the active workspace.
-        let x = self.workspaces.current_offset();
-        self.space.map_element(window, (x, 0), false);
+        // Open new windows on the active workspace, cascaded so they do not
+        // land exactly on top of one another, and focus them.
+        let location = self.placement_for_new_window();
+        self.space.map_element(window.clone(), location, false);
+        self.focus_window(&window);
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {

@@ -274,6 +274,61 @@ impl ArchLume {
             .set_focus(self, focus, serial);
     }
 
+    /// Give keyboard focus to `window` (used when a new window opens).
+    pub fn focus_window(&mut self, window: &Window) {
+        let Some(surface) = window.toplevel().map(|t| t.wl_surface().clone()) else {
+            return;
+        };
+        let serial = SERIAL_COUNTER.next_serial();
+        self.seat
+            .get_keyboard()
+            .unwrap()
+            .set_focus(self, Some(surface), serial);
+    }
+
+    /// Where a newly opened window should be placed: cascaded from the top-left
+    /// of the active workspace so consecutive windows do not overlap exactly.
+    pub fn placement_for_new_window(&self) -> Point<i32, Logical> {
+        let fallback: Point<i32, Logical> = (self.workspaces.current_offset(), 0).into();
+        let Some(output) = &self.output else {
+            return fallback;
+        };
+        let Some(geo) = self.space.output_geometry(output) else {
+            return fallback;
+        };
+        let output_rect = wm::Rect {
+            x: geo.loc.x as f64,
+            y: geo.loc.y as f64,
+            w: geo.size.w as f64,
+            h: geo.size.h as f64,
+        };
+
+        let region_x = self.workspaces.current_offset() as f64;
+        let region_w = self.workspaces.stride() as f64;
+        let existing = self
+            .space
+            .elements()
+            .filter(|w| {
+                self.space.element_location(w).is_some_and(|loc| {
+                    let g = w.geometry();
+                    wm::in_region(
+                        wm::Rect {
+                            x: loc.x as f64,
+                            y: loc.y as f64,
+                            w: g.size.w as f64,
+                            h: g.size.h as f64,
+                        },
+                        region_x,
+                        region_w,
+                    )
+                })
+            })
+            .count();
+
+        let (x, y) = wm::cascade_position(existing, output_rect, wm::CASCADE_STEP);
+        (x, y).into()
+    }
+
     /// Move the currently focused window to workspace `index` and switch to it
     /// (AGENTS section 6.4: `Shift + Super + digit`).
     pub fn move_focused_window_to_workspace(&mut self, index: usize) -> bool {

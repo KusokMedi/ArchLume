@@ -87,7 +87,9 @@ synthetic key events to the compositor).
 
 Switching workspaces also re-targets keyboard focus to the topmost window on
 the new workspace (or clears it), so typing does not go to an off-screen
-window (`wm::in_region`, unit-tested).
+window (`wm::in_region`, unit-tested). New windows cascade diagonally from the
+top-left of the active workspace and receive focus on open (`wm::cascade_position`,
+unit-tested).
 
 Un-snap restore is implemented: `wm::SnapMemory` remembers each window's
 floating size when it is first snapped, and a drop in the centre restores that

@@ -108,6 +108,26 @@ pub fn in_region(rect: Rect, region_x: f64, region_w: f64) -> bool {
     centre_x >= region_x && centre_x < region_x + region_w
 }
 
+/// Diagonal offset applied to each successive new window so they do not land
+/// exactly on top of one another.
+pub const CASCADE_STEP: i32 = 32;
+
+/// Number of distinct cascade slots before the placement wraps back to the
+/// origin.
+pub const CASCADE_SLOTS: usize = 8;
+
+/// Top-left location for the `index`-th window on an output (AGENTS 6.3:
+/// floating by default). Windows cascade diagonally and wrap, staying inside
+/// the output.
+pub fn cascade_position(index: usize, output: Rect, step: i32) -> (i32, i32) {
+    let slot = (index % CASCADE_SLOTS) as i32;
+    let max_dx = (output.w as i32 - step).max(0);
+    let max_dy = (output.h as i32 - step).max(0);
+    let dx = (slot * step).clamp(0, max_dx);
+    let dy = (slot * step).clamp(0, max_dy);
+    (output.x as i32 + dx, output.y as i32 + dy)
+}
+
 /// Remembers the floating size of each snapped window so the compositor can
 /// restore it when the window is dragged back to the centre (un-snap, AGENTS
 /// section 6.3). Keyed by an arbitrary window identity supplied by the caller.
@@ -351,5 +371,40 @@ mod tests {
         }; // centre = 550
         assert!(in_region(straddle, 500.0, 500.0));
         assert!(!in_region(straddle, 0.0, 500.0));
+    }
+
+    #[test]
+    fn cascade_steps_and_wraps() {
+        let o = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 1000.0,
+            h: 800.0,
+        };
+        assert_eq!(cascade_position(0, o, CASCADE_STEP), (0, 0));
+        assert_eq!(cascade_position(1, o, CASCADE_STEP), (32, 32));
+        assert_eq!(cascade_position(3, o, CASCADE_STEP), (96, 96));
+        // Wraps back to the origin after CASCADE_SLOTS windows.
+        assert_eq!(cascade_position(CASCADE_SLOTS, o, CASCADE_STEP), (0, 0));
+    }
+
+    #[test]
+    fn cascade_stays_inside_small_output() {
+        let o = Rect {
+            x: 10.0,
+            y: 20.0,
+            w: 100.0,
+            h: 100.0,
+        };
+        // Slot 7 would be 224px, clamped to width/height minus one step.
+        assert_eq!(cascade_position(7, o, CASCADE_STEP), (10 + 68, 20 + 68));
+        // Degenerate output smaller than a step does not overflow.
+        let tiny = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 10.0,
+            h: 10.0,
+        };
+        assert_eq!(cascade_position(7, tiny, CASCADE_STEP), (0, 0));
     }
 }
