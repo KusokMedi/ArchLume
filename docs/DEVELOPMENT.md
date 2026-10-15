@@ -1,0 +1,112 @@
+# Development Guide
+
+This document explains how to build, run, and test ArchLume, and the rules that
+keep development safe and reproducible.
+
+## 0. Non-negotiable: do not disturb the host
+
+ArchLume is **developed on a live host machine that is also someone's daily
+driver**. Treat the host desktop as untouchable:
+
+- Do **not** modify, disable, or reconfigure the host compositor, shell,
+  session, system config, bootloader, or disks.
+- Do **not** run destructive disk operations (partitioning, formatting, `dd` to
+  a block device, `mkfs`, installers) on the host. All installation testing
+  happens inside QEMU with a virtual disk.
+- Test the compositor **nested** inside the host Wayland session, or inside a
+  QEMU VM. Never take over the host's DRM/logind session.
+- Installing development packages (toolchains, QEMU, archiso) is allowed; see
+  §1.
+
+## 1. Toolchain
+
+Target platform: Arch Linux (`x86_64`). Install prerequisites:
+
+```sh
+# Rust toolchain (version pinned by rust-toolchain.toml)
+sudo pacman -S --needed rustup
+rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+
+# Build/run dependencies for the Smithay compositor
+sudo pacman -S --needed base-devel pkgconf \
+  wayland wayland-protocols libxkbcommon libinput libdrm \
+  mesa libglvnd seatd libdisplay-info hwdata
+
+# ISO build + virtualized testing
+sudo pacman -S --needed archiso qemu-desktop edk2-ovmf
+
+# Optional convenience runner
+# sudo pacman -S --needed just
+```
+
+> On Omarchy hosts, direct `pacman -Syu` (system upgrade) is blocked by an
+> Omarchy guard on purpose; use `omarchy update` for system upgrades and plain
+> `pacman -S <pkg>` (no `-u`) for adding packages. This applies only to the
+> developer's host, never to an installed ArchLume system.
+
+## 2. Build, format, lint, test
+
+With [`just`](https://github.com/casey/just) installed, the canonical commands
+are:
+
+```sh
+just build     # cargo build --workspace
+just test      # cargo test --workspace
+just fmt       # cargo fmt --all
+just fmt-check # cargo fmt --all -- --check
+just lint      # cargo clippy --workspace --all-targets -- -D warnings
+just check     # fmt-check + lint + test
+```
+
+Equivalent raw commands (usable before a Cargo workspace exists):
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build --workspace
+```
+
+Lint is **deny-warnings**: warnings are treated as failures.
+
+## 3. Running the compositor (nested)
+
+During development the compositor runs as a client of the host Wayland session
+(winit backend). This never touches the host's display session:
+
+```sh
+just run-nested     # cargo run -p archlume-compositor -- --nested
+```
+
+(Native DRM/libseat operation is a Milestone 4 deliverable and is only tested on
+dedicated hardware or in a VM, never on the development host's session.)
+
+## 4. ISO build and QEMU testing
+
+```sh
+just iso            # build the archiso profile into iso/out/
+just qemu           # boot the built ISO in QEMU with a disposable virtual disk
+```
+
+QEMU uses a **disposable virtual disk**; the host disks are never passed
+through. UEFI is the first-class target (`edk2-ovmf`).
+
+## 5. Conventions
+
+- **Language:** all repository artifacts (code, comments, docs, commit
+  messages, UI strings) are **English**. Chat with the owner may be in Russian.
+- **Formatting:** `rustfmt` (see `rust-toolchain.toml`), `-D warnings` clippy.
+- **Commits:** small and frequent, one logical change each; imperative mood
+  ("add", "fix", "refactor"). Do not push unless explicitly authorized.
+- **No generated artifacts** in commits (build outputs, ISOs, caches).
+- **No secrets**: never commit keys, tokens, or credentials.
+- **Strings for UI** live in translation resources, separate from logic, even
+  though only English ships initially.
+- Add tests alongside behavior, not in a later phase.
+
+## 6. Evidence, not claims
+
+`AGENTS.md` is explicit: never claim a feature, test, or release succeeded
+without concrete evidence. Record the exact command and its output when
+reporting progress. If something cannot be verified (missing hardware, CI
+quota), say so and document the limitation.

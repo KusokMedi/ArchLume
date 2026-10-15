@@ -1,0 +1,6 @@
+[toolchain]
+# Pin the toolchain so local and CI builds agree.
+# The specific channel version is resolved by rustup and recorded in CI logs.
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

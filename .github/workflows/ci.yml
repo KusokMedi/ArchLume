@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# Documentation note: at Milestone 1 there is no Cargo workspace yet, so the
+# Rust job detects its absence and skips (reporting that clearly) instead of
+# faking a green build against nothing.
+
+jobs:
+  hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required files exist
+        run: |
+          set -e
+          for f in README.md AGENTS.md docs/ARCHITECTURE.md docs/ROADMAP.md docs/DEVELOPMENT.md docs/DECISIONS.md; do
+            if [ ! -f "$f" ]; then
+              echo "::error file=$f::required file is missing"
+              exit 1
+            fi
+          done
+      - name: Check for committed build artifacts
+        run: |
+          set -e
+          if git ls-files | grep -E '(^|/)(target/|work/|out/)|\.iso$' ; then
+            echo "::error::generated artifacts appear to be tracked"
+            exit 1
+          fi
+          echo "No tracked build artifacts."
+
+  rust:
+    name: Rust (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect Cargo workspace
+        id: ws
+        run: |
+          if [ -f Cargo.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: No workspace yet
+        if: steps.ws.outputs.present == 'false'
+        run: echo "No Cargo workspace at the repository root yet; Rust checks skipped."
+      - name: Install Rust toolchain
+        if: steps.ws.outputs.present == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Smithay build dependencies
+        if: steps.ws.outputs.present == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libwayland-dev libxkbcommon-dev libinput-dev \
+            libdrm-dev libegl1-mesa-dev libgles2-mesa-dev libgbm-dev \
+            libseat-dev libdisplay-info-dev
+      - name: Cache cargo
+        if: steps.ws.outputs.present == 'true'
+        uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        if: steps.ws.outputs.present == 'true'
+        run: cargo fmt --all -- --check
+      - name: clippy
+        if: steps.ws.outputs.present == 'true'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: test
+        if: steps.ws.outputs.present == 'true'
+        run: cargo test --workspace

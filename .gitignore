@@ -1,0 +1,27 @@
+# Rust
+/target/
+**/target/
+
+# archiso build output
+/iso/**/work/
+/iso/**/out/
+*.iso
+*.iso.sig
+*.iso.sha256
+*.iso.sha512
+
+# Generic build output
+/build/
+/cache/
+/out/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Local logs and scratch
+*.log
+/tmp/
