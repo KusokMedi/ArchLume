@@ -97,6 +97,12 @@ size (unit-tested). Its bookkeeping is pure; the grab integration compiles and
 smoke-tests but the exact drop interaction has not yet been exercised at
 runtime.
 
+A line-based control socket (`compositor/src/control.rs`, ADR-0007) lets the
+shell and tests drive the compositor. `scripts/control-test.sh`
+(`just control-test`) starts the compositor nested, switches workspaces over the
+socket, and checks the replies, so workspace switching **is** verified at
+runtime, not only in unit tests.
+
 Still to come: native DRM/libseat startup (plan in `docs/NATIVE-BACKEND.md`),
 gestures, and snap preview.
 

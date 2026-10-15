@@ -75,11 +75,19 @@ During development the compositor runs as a client of the host Wayland session
 (winit backend). This never touches the host's display session:
 
 ```sh
-just run-nested     # cargo run -p archlume-compositor -- --nested
+just run-nested     # cargo run -p archlume-compositor
+just smoke          # nested smoke test: a client maps a window and exits
+just control-test   # drive workspace state over the control socket
 ```
 
+The compositor exposes a line-based control socket at
+`$XDG_RUNTIME_DIR/archlume-control.sock` (path also in `$ARCHLUME_CONTROL`); see
+`compositor/src/control.rs` and ADR-0007. `just control-test` uses it to verify
+workspace switching at runtime without needing to inject input events.
+
 (Native DRM/libseat operation is a Milestone 4 deliverable and is only tested on
-dedicated hardware or in a VM, never on the development host's session.)
+dedicated hardware or in a VM, never on the development host's session. See
+`docs/NATIVE-BACKEND.md`.)
 
 ## 4. ISO build and QEMU testing
 

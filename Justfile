@@ -41,6 +41,10 @@ run-nested:
 smoke:
 	bash scripts/smoke-nested.sh
 
+# Runtime test of the control socket (drives workspace state without input events)
+control-test:
+	bash scripts/control-test.sh
+
 # Boot the newest ISO in QEMU (UEFI) and verify the live environment via OCR
 boot-test:
 	bash scripts/boot-iso-qemu.sh

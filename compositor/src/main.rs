@@ -2,17 +2,19 @@
 //!
 //! A minimal but real Smithay-based Wayland compositor. It currently runs on
 //! the winit backend (nested inside another Wayland session) and implements
-//! xdg-shell toplevels/popups, pointer/keyboard input, focus, and window
-//! move/resize grabs.
+//! xdg-shell toplevels/popups, pointer/keyboard input, focus, ten fixed
+//! workspaces, floating window management with drag-to-edge snapping and
+//! un-snap restore, and a line-based control socket for the shell and tests.
 //!
-//! Native DRM/libseat backends, workspaces, gestures, and ArchLume-specific
-//! window-management policy are future work (see `docs/ROADMAP.md`).
+//! The native DRM/libseat backend, gestures, and snap preview are future work
+//! (see `docs/ROADMAP.md` and `docs/NATIVE-BACKEND.md`).
 //!
 //! Adapted from the Smithay `smallvil` example (MIT-licensed) at tag `v0.7.0`
 //! and reorganized for ArchLume. See `docs/DECISIONS.md` (ADR-0002).
 
 #![allow(irrefutable_let_patterns)]
 
+mod control;
 mod grabs;
 mod handlers;
 mod input;
@@ -22,7 +24,7 @@ mod wm;
 mod workspace;
 
 use smithay::reexports::{
-    calloop::EventLoop,
+    calloop::{channel, EventLoop},
     wayland_server::{Display, DisplayHandle},
 };
 pub use state::ArchLume;
@@ -51,6 +53,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     crate::winit::init_winit(&mut event_loop, &mut data)?;
+
+    // Control socket: lets the shell and tests drive the compositor (see
+    // control.rs). Requests are delivered on the event-loop thread, so handlers
+    // can mutate compositor state directly.
+    let (control_tx, control_rx) = channel::channel::<control::Command>();
+    event_loop
+        .handle()
+        .insert_source(control_rx, |event, _, data| {
+            if let channel::Event::Msg(command) = event {
+                control::handle(command, &mut data.state);
+            }
+        })?;
+    let _control_server = control::Server::start(control::default_socket_path(), control_tx)?;
+    std::env::set_var("ARCHLUME_CONTROL", &_control_server.path);
 
     // Optionally launch a client for quick manual testing:
     //   archlume-compositor --command foot

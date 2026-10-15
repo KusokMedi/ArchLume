@@ -119,3 +119,29 @@ host-only operational rule; ArchLume itself uses normal `pacman`.
 **Consequences.** Host updates gain Omarchy's snapshot safety and migrations.
 Detached runs of `omarchy update` need `OMARCHY_PATH=/usr/share/omarchy` set and
 stdin redirected from `/dev/null`.
+
+---
+
+## ADR-0007 — Line-based control socket for shell/test IPC
+
+- **Date:** 2026-10-15
+- **Status:** accepted
+
+**Context.** The shell (M5) must drive the compositor (switch workspaces, list
+windows, ...), and automated tests need a way to observe compositor state
+without injecting input events. A full compositor IPC protocol is a large design
+effort that would block earlier progress.
+
+**Decision.** Provide a minimal, dependency-free, line-based protocol over a
+UNIX socket at `$XDG_RUNTIME_DIR/archlume-control.sock` (also exported as
+`ARCHLUME_CONTROL`). Commands return single-line `ok ...` / `err ...` responses
+(see `compositor/src/control.rs`). It is explicitly **unversioned** and may be
+replaced by a richer, versioned protocol once the shell's needs are clearer.
+Requests are handled on the event-loop thread via a calloop channel, so handlers
+mutate compositor state directly.
+
+**Consequences.** Enables the shell and runtime tests immediately, and is
+verified by `scripts/control-test.sh` (`just control-test`). Because it can
+mutate state, access should later be restricted (e.g. socket permissions,
+per-user runtime dir). Cross-process state dumps are limited to what the
+protocol exposes; expand deliberately.
