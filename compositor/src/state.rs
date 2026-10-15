@@ -5,13 +5,14 @@ use smithay::{
     input::{Seat, SeatState},
     reexports::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
+        wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
             protocol::wl_surface::WlSurface,
             Display, DisplayHandle,
         },
     },
-    utils::{Logical, Point},
+    utils::{Logical, Point, Size},
     wayland::{
         compositor::{CompositorClientState, CompositorState},
         output::OutputManagerState,
@@ -22,7 +23,10 @@ use smithay::{
     },
 };
 
-use crate::CalloopData;
+use crate::{
+    wm::{self, SnapZone},
+    CalloopData,
+};
 
 pub struct ArchLume {
     pub start_time: std::time::Instant,
@@ -149,6 +153,33 @@ impl ArchLume {
                     .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
                     .map(|(s, p)| (s, (p + location).to_f64()))
             })
+    }
+
+    /// Apply a snap zone to `window`: move it to the target geometry and ask
+    /// the client to resize via an xdg_toplevel configure. The window keeps its
+    /// snapshot geometry only once the client acknowledges and commits.
+    pub fn snap_window(&mut self, window: &Window, zone: SnapZone, geometry: wm::Rect) {
+        let location: Point<i32, Logical> =
+            (geometry.x.round() as i32, geometry.y.round() as i32).into();
+        let size: Size<i32, Logical> = (
+            geometry.w.round().max(1.0) as i32,
+            geometry.h.round().max(1.0) as i32,
+        )
+            .into();
+
+        if let Some(toplevel) = window.toplevel() {
+            toplevel.with_pending_state(|state| {
+                state.size = Some(size);
+                if zone.is_maximized() {
+                    state.states.set(xdg_toplevel::State::Maximized);
+                } else {
+                    state.states.unset(xdg_toplevel::State::Maximized);
+                }
+            });
+            let _serial = toplevel.send_configure();
+        }
+
+        self.space.map_element(window.clone(), location, true);
     }
 }
 

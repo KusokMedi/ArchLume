@@ -75,10 +75,12 @@ impl XdgShellHandler for ArchLume {
                 .clone();
             let initial_window_location = self.space.element_location(&window).unwrap();
 
+            let current_location = start_data.location;
             let grab = MoveSurfaceGrab {
                 start_data,
                 window,
                 initial_window_location,
+                current_location,
             };
 
             pointer.set_grab(self, grab, serial, Focus::Clear);

@@ -1,4 +1,4 @@
-use crate::ArchLume;
+use crate::{wm, ArchLume};
 use smithay::{
     desktop::Window,
     input::pointer::{
@@ -15,6 +15,9 @@ pub struct MoveSurfaceGrab {
     pub start_data: PointerGrabStartData<ArchLume>,
     pub window: Window,
     pub initial_window_location: Point<i32, Logical>,
+    /// Latest pointer location in space coordinates, used to decide the snap
+    /// zone when the drag ends.
+    pub current_location: Point<f64, Logical>,
 }
 
 impl PointerGrab<ArchLume> for MoveSurfaceGrab {
@@ -27,6 +30,8 @@ impl PointerGrab<ArchLume> for MoveSurfaceGrab {
     ) {
         // While the grab is active, no client has pointer focus.
         handle.motion(data, None, event);
+
+        self.current_location = event.location;
 
         let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
@@ -56,7 +61,31 @@ impl PointerGrab<ArchLume> for MoveSurfaceGrab {
         const BTN_LEFT: u32 = 0x110;
 
         if !handle.current_pressed().contains(&BTN_LEFT) {
-            // No more buttons pressed: release the grab.
+            // No more buttons pressed: snap the window if the drop landed in an
+            // edge zone, then release the grab.
+            let output = data
+                .space
+                .output_under(self.current_location)
+                .next()
+                .cloned();
+            if let Some(output) = output {
+                if let Some(geo) = data.space.output_geometry(&output) {
+                    let output_rect = wm::Rect {
+                        x: geo.loc.x as f64,
+                        y: geo.loc.y as f64,
+                        w: geo.size.w as f64,
+                        h: geo.size.h as f64,
+                    };
+                    let target = wm::resolve(
+                        (self.current_location.x, self.current_location.y),
+                        output_rect,
+                        wm::DEFAULT_BAND_FRACTION,
+                    );
+                    if let Some((zone, geometry)) = target {
+                        data.snap_window(&self.window, zone, geometry);
+                    }
+                }
+            }
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }

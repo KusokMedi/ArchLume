@@ -58,9 +58,15 @@ Acceptance criteria
 A minimal but real Smithay-based compositor lives under `compositor/`. It runs
 on the winit backend (nested), implements xdg-shell toplevels/popups,
 pointer/keyboard input, focus, and window move/resize grabs, and is verified by
-`scripts/smoke-nested.sh` (a client maps a window on the reference GPU). Native
-DRM/libseat startup, workspaces, gestures, and window-management policy (snap,
-maximize) are still to come.
+`scripts/smoke-nested.sh` (a client maps a window on the reference GPU).
+
+Window-management policy (`compositor/src/wm.rs`) implements floating-by-default
+with drag-to-edge snapping: top edge maximizes, left/right edges snap to halves,
+and corners snap to quarters. The zone/geometry logic is pure and unit-tested;
+the move grab applies the resulting xdg_toplevel configure on drop.
+
+Still to come: native DRM/libseat startup, workspaces, gestures, snap preview,
+and a way to un-snap back to the previous floating geometry.
 
 Deliverables
 - Smithay-based compositor: session startup, outputs, input, surfaces, basic
