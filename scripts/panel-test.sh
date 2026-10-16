@@ -60,7 +60,7 @@ for _ in $(seq 1 20); do
 done
 [ -S "$SOCK" ] || fail "control socket was not created at $SOCK"
 
-ctl() { printf '%s\n' "$1" | socat -t 1 - "UNIX-CONNECT:$SOCK" 2>/dev/null; }
+ctl() { printf '%s\n' "$*" | socat -t 1 - "UNIX-CONNECT:$SOCK" 2>/dev/null; }
 
 sock_name=""
 for _ in $(seq 1 20); do
@@ -155,4 +155,23 @@ awk -v d="${label_diff:-0}" 'BEGIN { exit !(d == 0) }' \
   || fail "brand label changed between captures (diff=$label_diff)"
 echo "ok: brand label stable while the clock ticks (diff=$label_diff)"
 
-echo "PASS: archlume-shell mapped a top layer surface, drew the panel bar, and the clock ticks"
+# Workspace indicator: PAD(10) + label(8 glyphs * 12) + WS_GAP(24) = x 130.
+ws_region="96x16+130+7"
+ws_w="$(white_frac "$OUT/panel.png" "$ws_region")"
+awk -v f="$ws_w" 'BEGIN { exit !(f > 0.02) }' \
+  || fail "workspace indicator text missing (white frac=$ws_w)"
+magick "$OUT/panel.png" -crop "$ws_region" +repage "$OUT/ws1.png"
+
+switch_out="$(ctl switch 4)"
+sleep 1
+ws_now="$(ctl workspace)"
+[ "$ws_now" = "ok 4" ] || fail "compositor did not switch to workspace 4 (switch='$switch_out', workspace='$ws_now')"
+grim -g "$REG" "$OUT/panel4.png" || fail "grim (workspace capture) failed"
+magick "$OUT/panel4.png" -crop "$ws_region" +repage "$OUT/ws4.png"
+ws_diff="$(magick compare -metric AE "$OUT/ws1.png" "$OUT/ws4.png" null: 2>&1 || true)"
+ws_diff="$(printf '%s' "$ws_diff" | awk '{print $1}')"
+awk -v d="${ws_diff:-0}" 'BEGIN { exit !(d > 0) }' \
+  || fail "workspace indicator did not update after switch (diff=$ws_diff)"
+echo "ok: workspace indicator updated to 4 (diff=$ws_diff)"
+
+echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock and a live workspace indicator"

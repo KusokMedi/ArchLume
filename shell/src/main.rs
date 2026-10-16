@@ -1,19 +1,24 @@
 //! ArchLume panel (Milestone 5).
 //!
 //! A Wayland client that asks the compositor for a top-layer surface via
-//! wlr-layer-shell and draws a bar with `wl_shm`. It shows a live local clock
-//! on the right and a brand label on the left; widgets, launcher integration
-//! and interactivity build on top of this.
+//! wlr-layer-shell and draws a bar with `wl_shm`. It shows a brand label and
+//! the active workspace on the left and a live local clock on the right;
+//! widgets, launcher integration and interactivity build on top of this.
+//!
+//! The active workspace is read from the compositor's control socket
+//! (`$ARCHLUME_CONTROL`, ADR-0007); if it is unavailable the indicator is simply
+//! omitted.
 //!
 //! Intentionally depends only on `smithay-client-toolkit`, `wayland-client`
-//! and `libc` (for local time); text uses the self-contained bitmap font in
-//! `font.rs`.
+//! and `libc`; text uses the self-contained bitmap font in `font.rs`.
 
 mod font;
 
 use std::{
-    os::fd::AsRawFd,
-    time::{SystemTime, UNIX_EPOCH},
+    io::{BufRead, BufReader, Write},
+    os::{fd::AsRawFd, unix::net::UnixStream},
+    path::{Path, PathBuf},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use smithay_client_toolkit::{
@@ -47,8 +52,14 @@ const TEXT_COLOR: [u8; 3] = [0xFF, 0xFF, 0xFF];
 const TEXT_SCALE: u32 = 2;
 /// Horizontal padding for text.
 const PAD: i32 = 10;
+/// Brand label shown on the left of the panel.
+const LABEL: &str = "ARCHLUME";
 /// How long to wait for Wayland events before ticking the clock (ms).
 const POLL_INTERVAL_MS: libc::c_int = 250;
+/// Minimum interval between control-socket workspace polls (ms).
+const WS_POLL_MS: u128 = 500;
+/// Gap between the brand label and the workspace indicator.
+const WS_GAP: i32 = 24;
 
 fn main() {
     let conn = Connection::connect_to_env().expect("connect to Wayland display");
@@ -80,6 +91,9 @@ fn main() {
         width: 0,
         height: PANEL_HEIGHT,
         clock: String::new(),
+        workspace: None,
+        control_path: control_socket_path(),
+        last_ws_poll: None,
     };
 
     loop {
@@ -87,26 +101,68 @@ fn main() {
         if panel.exit {
             break;
         }
-        // Tick the clock (redraws only when the text changes).
+        if panel.width == 0 {
+            event_queue.flush().expect("flush");
+            wait_for_events(&event_queue);
+            continue;
+        }
+        // Repaint when any visible text changes.
+        let mut dirty = false;
         let now = clock_string();
-        if panel.width > 0 && now != panel.clock {
+        if now != panel.clock {
             panel.clock = now;
+            dirty = true;
+        }
+        if panel.poll_workspace() {
+            dirty = true;
+        }
+        if dirty {
             panel.draw(&qh);
         }
         event_queue.flush().expect("flush");
-        // Block up to a short interval, then loop so the clock keeps ticking.
-        if let Some(guard) = event_queue.prepare_read() {
-            let mut pfd = libc::pollfd {
-                fd: guard.connection_fd().as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            let ready = unsafe { libc::poll(&mut pfd, 1, POLL_INTERVAL_MS) };
-            if ready > 0 && pfd.revents & libc::POLLIN != 0 {
-                let _ = guard.read();
-            }
+        wait_for_events(&event_queue);
+    }
+}
+
+/// Blocks for up to [`POLL_INTERVAL_MS`] waiting for Wayland events, reading
+/// them into the queue so the next loop iteration dispatches them. This keeps
+/// the clock ticking even when the compositor is otherwise idle.
+fn wait_for_events(event_queue: &wayland_client::EventQueue<Panel>) {
+    if let Some(guard) = event_queue.prepare_read() {
+        let mut pfd = libc::pollfd {
+            fd: guard.connection_fd().as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let ready = unsafe { libc::poll(&mut pfd, 1, POLL_INTERVAL_MS) };
+        if ready > 0 && pfd.revents & libc::POLLIN != 0 {
+            let _ = guard.read();
         }
     }
+}
+
+/// Resolves the compositor control-socket path (`$ARCHLUME_CONTROL`, else the
+/// default under `$XDG_RUNTIME_DIR`).
+fn control_socket_path() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("ARCHLUME_CONTROL") {
+        return Some(PathBuf::from(path));
+    }
+    let rt = std::env::var_os("XDG_RUNTIME_DIR")?;
+    Some(PathBuf::from(rt).join("archlume-control.sock"))
+}
+
+/// Queries the active workspace over the control socket. Returns `None` if the
+/// socket is missing or the request fails.
+fn query_workspace(path: &Path) -> Option<u32> {
+    let stream = UnixStream::connect(path).ok()?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_millis(200)))
+        .ok()?;
+    let mut writer = stream.try_clone().ok()?;
+    writer.write_all(b"workspace\n").ok()?;
+    let mut line = String::new();
+    BufReader::new(stream).read_line(&mut line).ok()?;
+    line.trim().strip_prefix("ok ")?.parse().ok()
 }
 
 /// Local wall-clock time as `HH:MM:SS` via the C library's `localtime_r`.
@@ -133,9 +189,32 @@ struct Panel {
     width: u32,
     height: u32,
     clock: String,
+    workspace: Option<u32>,
+    control_path: Option<PathBuf>,
+    last_ws_poll: Option<Instant>,
 }
 
 impl Panel {
+    /// Polls the active workspace if enough time has passed. Returns `true` when
+    /// the value changed (i.e. a repaint is needed).
+    fn poll_workspace(&mut self) -> bool {
+        let Some(path) = self.control_path.as_deref() else {
+            return false;
+        };
+        let elapsed = self.last_ws_poll.map(|t| t.elapsed().as_millis());
+        if elapsed.is_some_and(|ms| ms < WS_POLL_MS) {
+            return false;
+        }
+        self.last_ws_poll = Some(Instant::now());
+        let current = query_workspace(path);
+        if current != self.workspace {
+            self.workspace = current;
+            true
+        } else {
+            false
+        }
+    }
+
     fn draw(&mut self, qh: &QueueHandle<Self>) {
         let (width, height) = (self.width, self.height);
         let stride = width as i32 * 4;
@@ -157,7 +236,11 @@ impl Panel {
         canvas.fill(PANEL_COLOR);
 
         let text_y = ((height as i32) - (7 * TEXT_SCALE) as i32) / 2;
-        canvas.draw_text(PAD, text_y, TEXT_SCALE, "ARCHLUME", TEXT_COLOR);
+        canvas.draw_text(PAD, text_y, TEXT_SCALE, LABEL, TEXT_COLOR);
+        let ws_x = PAD + font::text_width(LABEL, TEXT_SCALE) as i32 + WS_GAP;
+        if let Some(ws) = self.workspace {
+            canvas.draw_text(ws_x, text_y, TEXT_SCALE, &format!("WS {ws}"), TEXT_COLOR);
+        }
         let clock_x = width as i32 - PAD - font::text_width(&self.clock, TEXT_SCALE) as i32;
         canvas.draw_text(clock_x, text_y, TEXT_SCALE, &self.clock, TEXT_COLOR);
 

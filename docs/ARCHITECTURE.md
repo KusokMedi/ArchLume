@@ -102,9 +102,12 @@ that places its surfaces with `wlr-layer-shell` through `smithay-client-toolkit`
 (see ADR-0008). This keeps UI iteration and crashes isolated from the compositor.
 
 - **Panel** (top only by default) is a `Layer::Top` surface with an exclusive
-  zone. The first slice draws a 28 px bar across the output with `wl_shm`,
-  showing a brand label and a live local clock; verified by
+  zone. It draws a 28 px bar across the output with `wl_shm`, showing a brand
+  label, the active workspace, and a live local clock; verified by
   `scripts/panel-test.sh` (`just panel-test`).
+- The active-workspace indicator polls the compositor control socket
+  (`$ARCHLUME_CONTROL`, ADR-0007); the indicator is omitted when it is
+  unavailable. A push-based event stream may replace polling later.
 - **Text** currently uses a small self-contained 5x7 bitmap font
   (`shell/src/font.rs`) so there is no external font asset or third-party font
   licence while the project licence is undecided. A proper vector-font stack
