@@ -83,6 +83,10 @@ fn handle_layer_commit(state: &mut ArchLume, surface: &WlSurface) {
             layer.layer_surface().send_configure();
         }
     }
+    drop(map);
+
+    // A layer may now want (or no longer want) exclusive keyboard focus.
+    state.update_layer_keyboard_focus();
 }
 
 impl BufferHandler for ArchLume {

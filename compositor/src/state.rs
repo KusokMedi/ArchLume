@@ -2,7 +2,7 @@ use std::{ffi::OsString, sync::Arc};
 
 use smithay::{
     backend::renderer::element::solid::SolidColorBuffer,
-    desktop::{PopupManager, Space, Window, WindowSurfaceType},
+    desktop::{layer_map_for_output, PopupManager, Space, Window, WindowSurfaceType},
     input::{Seat, SeatState},
     output::Output,
     reexports::{
@@ -19,7 +19,7 @@ use smithay::{
         compositor::{with_states, CompositorClientState, CompositorState},
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
-        shell::wlr_layer::WlrLayerShellState,
+        shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, WlrLayerShellState},
         shell::xdg::{XdgShellState, XdgToplevelSurfaceData},
         shm::ShmState,
         socket::ListeningSocketSource,
@@ -353,6 +353,58 @@ impl ArchLume {
                 .data_map
                 .get::<XdgToplevelSurfaceData>()
                 .and_then(|data| data.lock().unwrap().title.clone())
+        })
+    }
+
+    /// Gives keyboard focus to the topmost layer surface that requested
+    /// exclusive keyboard interaction (e.g. an open launcher with a search
+    /// field), or restores focus to the active window when none does.
+    pub fn update_layer_keyboard_focus(&mut self) {
+        let Some(output) = self.output.clone() else {
+            return;
+        };
+        let target = {
+            let map = layer_map_for_output(&output);
+            let mut found = None;
+            for kind in [
+                WlrLayer::Overlay,
+                WlrLayer::Top,
+                WlrLayer::Bottom,
+                WlrLayer::Background,
+            ] {
+                if let Some(surface) = map
+                    .layers_on(kind)
+                    .rev()
+                    .find(|l| {
+                        l.cached_state().keyboard_interactivity == KeyboardInteractivity::Exclusive
+                    })
+                    .map(|l| l.wl_surface().clone())
+                {
+                    found = Some(surface);
+                    break;
+                }
+            }
+            found
+        };
+
+        let keyboard = self.seat.get_keyboard().unwrap();
+        let current = keyboard.current_focus();
+        if let Some(surface) = target {
+            if current.as_ref() != Some(&surface) {
+                let serial = SERIAL_COUNTER.next_serial();
+                keyboard.set_focus(self, Some(surface), serial);
+            }
+        } else if current.is_some_and(|surface| self.is_layer_surface(&surface)) {
+            self.refocus_active_workspace();
+        }
+    }
+
+    /// Whether `surface` belongs to a mapped layer surface.
+    fn is_layer_surface(&self, surface: &WlSurface) -> bool {
+        self.space.outputs().any(|output| {
+            layer_map_for_output(output)
+                .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+                .is_some()
         })
     }
 

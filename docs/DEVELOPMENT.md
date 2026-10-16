@@ -87,16 +87,26 @@ The compositor exposes a line-based control socket at
 `compositor/src/control.rs` and ADR-0007. Commands: `ping`, `workspace`,
 `switch <n>`, `move <n>`, `windows`, `window <i>`, `close <i>`, `stats`,
 `preview <zone|off>`, `gesture <fingers> <dx> <dy>`, `layers`, `focused`,
-`launcher [on|off|toggle]`.
+`launcher [on|off|toggle]`, `key <name>`.
 `just control-test` uses it to verify workspace switching, window counting,
 focus-on-open, moving a window, cascade placement, close and frame stats at
 runtime without needing to inject input events.
 
+`key <name>` synthesises a press+release through the seat keyboard and delivers
+it to whichever surface currently holds keyboard focus; `name` is a single
+character (`a`-`z`, `0`-`9`) or `space`/`backspace`/`return`/`escape`/`tab`. It is
+an automation/debug aid: it lets tests (e.g. `just panel-test`) drive the shell's
+launcher search field without injecting input at the host session. It is never
+used to run privileged actions.
+
 The desktop shell is the separate `archlume-shell` crate. It connects to a
 running compositor and places a top panel with `wlr-layer-shell`, drawing a
-brand label, the active workspace (polled from the control socket), and a live
-local clock with a self-contained bitmap font (`shell/src/font.rs`). Run it
-against the nested compositor with:
+brand label, the active workspace and focused-window title (polled from the
+control socket), and a live local clock with a self-contained bitmap font
+(`shell/src/font.rs`). When the compositor reports the launcher open it maps a
+centred overlay card; that card requests exclusive keyboard focus, runs a search
+field, and launches the selected `.desktop` entry on Enter (`shell/src/apps.rs`).
+Run it against the nested compositor with:
 
 ```sh
 cargo build -p archlume-compositor -p archlume-shell

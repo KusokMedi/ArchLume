@@ -24,10 +24,15 @@ use std::{
 
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
+    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_registry,
+    delegate_seat, delegate_shm,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
+    seat::{
+        keyboard::{KeyEvent, KeyboardHandler, Modifiers},
+        Capability, SeatHandler, SeatState,
+    },
     shell::{
         wlr_layer::{
             Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
@@ -39,7 +44,7 @@ use smithay_client_toolkit::{
 };
 use wayland_client::{
     globals::registry_queue_init,
-    protocol::{wl_output, wl_shm, wl_surface},
+    protocol::{wl_keyboard, wl_output, wl_seat, wl_shm, wl_surface},
     Connection, QueueHandle,
 };
 
@@ -70,6 +75,13 @@ const LAUNCHER_H: u32 = 400;
 const LAUNCHER_BG: [u8; 3] = [0x10, 0x1B, 0x2E];
 /// Maximum number of application entries drawn in the launcher.
 const MAX_APPS: usize = 14;
+/// Maximum length of the launcher search query.
+const MAX_QUERY: usize = 32;
+/// X11 keysyms handled specially by the launcher (`xkeysym`).
+const KEY_BACKSPACE: u32 = 0xff08;
+const KEY_RETURN: u32 = 0xff0d;
+const KEY_KP_ENTER: u32 = 0xff8d;
+const KEY_ESCAPE: u32 = 0xff1b;
 
 fn main() {
     let conn = Connection::connect_to_env().expect("connect to Wayland display");
@@ -79,6 +91,7 @@ fn main() {
     let compositor = CompositorState::bind(&globals, &qh).expect("wl_compositor is not available");
     let layer_shell = LayerShell::bind(&globals, &qh).expect("wlr-layer-shell is not available");
     let shm = Shm::bind(&globals, &qh).expect("wl_shm is not available");
+    let seat_state = SeatState::new(&globals, &qh);
 
     let surface = compositor.create_surface(&qh);
     let layer =
@@ -112,6 +125,11 @@ fn main() {
         launcher: None,
         launcher_open: false,
         launcher_configured: false,
+        seat_state,
+        seat: None,
+        keyboard: None,
+        query: String::new(),
+        redraw: false,
     };
 
     loop {
@@ -134,9 +152,13 @@ fn main() {
         if panel.poll_status() {
             dirty = true;
         }
+        dirty |= std::mem::take(&mut panel.redraw);
         panel.sync_launcher(&qh);
         if dirty {
             panel.draw(&qh);
+            if panel.launcher_configured {
+                panel.draw_launcher(&qh);
+            }
         }
         event_queue.flush().expect("flush");
         wait_for_events(&event_queue);
@@ -224,10 +246,15 @@ struct Panel {
     title: Option<String>,
     control_path: Option<PathBuf>,
     last_ws_poll: Option<Instant>,
-    apps: Vec<String>,
+    apps: Vec<apps::AppEntry>,
     launcher: Option<LayerSurface>,
     launcher_open: bool,
     launcher_configured: bool,
+    seat_state: SeatState,
+    seat: Option<wl_seat::WlSeat>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    query: String,
+    redraw: bool,
 }
 
 impl Panel {
@@ -251,6 +278,48 @@ impl Panel {
         changed
     }
 
+    /// Applications matching the current search query, in display order.
+    fn filtered(&self) -> Vec<&apps::AppEntry> {
+        self.apps
+            .iter()
+            .filter(|app| app.matches(&self.query))
+            .collect()
+    }
+
+    /// Launches the first application matching the current query. The command
+    /// is run through the shell so that field codes and quoting behave like a
+    /// normal `.desktop` launch; the child inherits the Wayland environment.
+    fn launch_selected(&mut self) {
+        let command = self
+            .filtered()
+            .first()
+            .map(|app| apps::strip_field_codes(&app.exec));
+        if let Some(command) = command {
+            if !command.is_empty() {
+                if let Err(err) = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(&command)
+                    .spawn()
+                {
+                    eprintln!("failed to launch {command:?}: {err}");
+                }
+            }
+        }
+        self.close_launcher();
+    }
+
+    /// Closes the launcher locally and tells the compositor to update its
+    /// state, so the next poll does not immediately reopen it.
+    fn close_launcher(&mut self) {
+        if let Some(path) = self.control_path.as_deref() {
+            if let Ok(mut stream) = UnixStream::connect(path) {
+                let _ = stream.write_all(b"launcher off\n");
+            }
+        }
+        self.launcher_open = false;
+        self.query.clear();
+    }
+
     /// Creates or destroys the launcher overlay so it matches `launcher_open`.
     fn sync_launcher(&mut self, qh: &QueueHandle<Self>) {
         match (self.launcher_open, self.launcher.is_some()) {
@@ -263,12 +332,15 @@ impl Panel {
                     Some("archlume-launcher"),
                     None,
                 );
-                // No anchor: the compositor centres the surface.
-                layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+                // No anchor: the compositor centres the surface. Exclusive
+                // keyboard interaction lets the compositor route typing to the
+                // launcher's search field.
+                layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
                 layer.set_size(LAUNCHER_W, LAUNCHER_H);
                 layer.commit();
                 self.launcher = Some(layer);
                 self.launcher_configured = false;
+                self.query.clear();
             }
             (false, true) => {
                 self.launcher = None;
@@ -330,6 +402,13 @@ impl Panel {
         let (width, height) = (LAUNCHER_W, LAUNCHER_H);
         let surface = layer.wl_surface().clone();
         let stride = width as i32 * 4;
+        let query = format!("> {}_", self.query);
+        let names: Vec<String> = self
+            .filtered()
+            .into_iter()
+            .take(MAX_APPS)
+            .map(|app| app.name.clone())
+            .collect();
         let (buffer, canvas) = self
             .pool
             .create_buffer(
@@ -347,8 +426,9 @@ impl Panel {
         };
         canvas.fill(LAUNCHER_BG);
         canvas.draw_text(PAD * 2, 14, TEXT_SCALE, "APPS", TEXT_COLOR);
-        let mut y = 46;
-        for name in self.apps.iter().take(MAX_APPS) {
+        canvas.draw_text(PAD * 2, 44, TEXT_SCALE, &query, TEXT_COLOR);
+        let mut y = 76;
+        for name in &names {
             canvas.draw_text(PAD * 2, y, TEXT_SCALE, name, TEXT_COLOR);
             y += 20;
         }
@@ -417,6 +497,122 @@ impl OutputHandler for Panel {
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
 }
 
+impl SeatHandler for Panel {
+    fn seat_state(&mut self) -> &mut SeatState {
+        &mut self.seat_state
+    }
+
+    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
+        self.seat = Some(seat);
+    }
+
+    fn new_capability(
+        &mut self,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+        seat: wl_seat::WlSeat,
+        capability: Capability,
+    ) {
+        if capability == Capability::Keyboard && self.keyboard.is_none() {
+            match self.seat_state.get_keyboard(qh, &seat, None) {
+                Ok(keyboard) => self.keyboard = Some(keyboard),
+                Err(err) => eprintln!("failed to create keyboard: {err}"),
+            }
+        }
+    }
+
+    fn remove_capability(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: wl_seat::WlSeat,
+        capability: Capability,
+    ) {
+        if capability == Capability::Keyboard {
+            if let Some(keyboard) = self.keyboard.take() {
+                keyboard.release();
+            }
+        }
+    }
+
+    fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+}
+
+impl KeyboardHandler for Panel {
+    fn enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: &wl_surface::WlSurface,
+        _: u32,
+        _: &[u32],
+        _: &[smithay_client_toolkit::seat::keyboard::Keysym],
+    ) {
+    }
+
+    fn leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: &wl_surface::WlSurface,
+        _: u32,
+    ) {
+    }
+
+    fn press_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        event: KeyEvent,
+    ) {
+        if !self.launcher_open {
+            return;
+        }
+        match event.keysym.raw() {
+            KEY_ESCAPE => self.close_launcher(),
+            KEY_RETURN | KEY_KP_ENTER => self.launch_selected(),
+            KEY_BACKSPACE => {
+                self.query.pop();
+            }
+            _ => {
+                if let Some(text) = &event.utf8 {
+                    for c in text.chars() {
+                        if !c.is_control() && self.query.chars().count() < MAX_QUERY {
+                            self.query.push(c);
+                        }
+                    }
+                }
+            }
+        }
+        self.redraw = true;
+    }
+
+    fn release_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        _: KeyEvent,
+    ) {
+    }
+
+    fn update_modifiers(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        _: Modifiers,
+        _: u32,
+    ) {
+    }
+}
+
 impl LayerShellHandler for Panel {
     fn closed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, layer: &LayerSurface) {
         let is_launcher = self
@@ -478,6 +674,8 @@ delegate_compositor!(Panel);
 delegate_output!(Panel);
 delegate_shm!(Panel);
 delegate_layer!(Panel);
+delegate_seat!(Panel);
+delegate_keyboard!(Panel);
 delegate_registry!(Panel);
 
 impl ProvidesRegistryState for Panel {

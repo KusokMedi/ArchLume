@@ -55,6 +55,8 @@ impl WlrLayerShellHandler for ArchLume {
         }) {
             map.unmap_layer(&layer);
         }
+        // Restore focus to a window if the destroyed layer had it.
+        self.update_layer_keyboard_focus();
     }
 }
 

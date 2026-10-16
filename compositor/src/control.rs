@@ -27,9 +27,16 @@
 //! | `focused`      | `ok <title>` or `ok -` (focused window title) |
 //! | `launcher`     | `ok on\|off` (query the launcher state) |
 //! | `launcher on\|off\|toggle` | `ok on\|off` (set/toggle the launcher) |
+//! | `key <name>`   | `ok` (inject a key press+release; automation/debug) |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
+//!
+//! `key` accepts a single character (`a`-`z`, `0`-`9`) or a name: `space`,
+//! `backspace`, `return`, `escape`, `tab`. It synthesises the event through the
+//! seat's keyboard, so it is delivered to whichever surface currently holds
+//! keyboard focus — used by automated tests to drive the shell without a
+//! physical input device.
 
 use std::{
     io::{BufRead, BufReader, Write},
@@ -39,7 +46,8 @@ use std::{
 };
 
 use smithay::{
-    desktop::layer_map_for_output, reexports::calloop::channel::Sender as ControlSender,
+    backend::input::KeyState, desktop::layer_map_for_output, input::keyboard::FilterResult,
+    reexports::calloop::channel::Sender as ControlSender, utils::SERIAL_COUNTER,
 };
 
 use crate::{
@@ -88,6 +96,10 @@ pub enum Command {
     FocusedTitle(Reply),
     LauncherState(Reply),
     SetLauncher(Option<bool>, Reply),
+    InjectKey {
+        code: u32,
+        reply: Reply,
+    },
 }
 
 /// Running control server. Keeps the socket path; the accept thread is
@@ -177,6 +189,7 @@ enum Request {
     Focused,
     Launcher,
     SetLauncher(Option<bool>),
+    Key(u32),
 }
 
 fn parse_request(line: &str) -> Option<Request> {
@@ -197,6 +210,7 @@ fn parse_request(line: &str) -> Option<Request> {
             Some("toggle") => Request::SetLauncher(None),
             Some(_) => return None,
         }),
+        "key" => Some(Request::Key(keycode(parts.next()?)?)),
         "switch" => Some(Request::Switch(number(&mut parts)?)),
         "move" => Some(Request::Move(number(&mut parts)?)),
         "window" => Some(Request::Window(number(&mut parts)?)),
@@ -237,6 +251,63 @@ fn parse_zone(name: &str) -> Option<Option<SnapZone>> {
     })
 }
 
+/// Map a character or key name to a Linux evdev keycode. Only the keys needed
+/// for automation are supported; anything else is rejected.
+fn keycode(name: &str) -> Option<u32> {
+    Some(match name {
+        "space" => 57,
+        "backspace" => 14,
+        "return" | "enter" => 28,
+        "escape" | "esc" => 1,
+        "tab" => 15,
+        "a" => 30,
+        "b" => 48,
+        "c" => 46,
+        "d" => 32,
+        "e" => 18,
+        "f" => 33,
+        "g" => 34,
+        "h" => 35,
+        "i" => 23,
+        "j" => 36,
+        "k" => 37,
+        "l" => 38,
+        "m" => 50,
+        "n" => 49,
+        "o" => 24,
+        "p" => 25,
+        "q" => 16,
+        "r" => 19,
+        "s" => 31,
+        "t" => 20,
+        "u" => 22,
+        "v" => 47,
+        "w" => 17,
+        "x" => 45,
+        "y" => 21,
+        "z" => 44,
+        "1" => 2,
+        "2" => 3,
+        "3" => 4,
+        "4" => 5,
+        "5" => 6,
+        "6" => 7,
+        "7" => 8,
+        "8" => 9,
+        "9" => 10,
+        "0" => 11,
+        _ => return None,
+    })
+}
+
+/// Milliseconds since the process start, for synthesised input timestamps.
+fn now_msec() -> u32 {
+    use std::sync::OnceLock;
+    use std::time::Instant;
+    static START: OnceLock<Instant> = OnceLock::new();
+    START.get_or_init(Instant::now).elapsed().as_millis() as u32
+}
+
 fn parse(line: &str, reply: Reply) -> Option<Command> {
     Some(match parse_request(line)? {
         Request::Ping => Command::Ping(reply),
@@ -258,6 +329,7 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
         Request::Focused => Command::FocusedTitle(reply),
         Request::Launcher => Command::LauncherState(reply),
         Request::SetLauncher(open) => Command::SetLauncher(open, reply),
+        Request::Key(code) => Command::InjectKey { code, reply },
     })
 }
 
@@ -377,6 +449,23 @@ pub fn handle(command: Command, state: &mut ArchLume) {
             };
             let _ = reply.send(format!("ok {}", on_off(is_open)));
         }
+        Command::InjectKey { code, reply } => {
+            let time = now_msec();
+            for key_state in [KeyState::Pressed, KeyState::Released] {
+                let serial = SERIAL_COUNTER.next_serial();
+                // `Keycode` is an XKB keycode, which is the evdev code + 8
+                // (the same offset the winit backend applies).
+                state.seat.get_keyboard().unwrap().input::<(), _>(
+                    state,
+                    (code + 8).into(),
+                    key_state,
+                    serial,
+                    time,
+                    |_, _, _| FilterResult::Forward,
+                );
+            }
+            let _ = reply.send("ok".to_string());
+        }
         Command::FocusedTitle(reply) => {
             let title = state
                 .focused_window_title()
@@ -422,6 +511,17 @@ mod tests {
         assert_eq!(parse_request("stats"), Some(Stats));
         // Surrounding whitespace is ignored.
         assert_eq!(parse_request("  ping  "), Some(Ping));
+    }
+
+    #[test]
+    fn parses_key_injection() {
+        assert_eq!(parse_request("key z"), Some(Key(44)));
+        assert_eq!(parse_request("key 4"), Some(Key(5)));
+        assert_eq!(parse_request("key return"), Some(Key(28)));
+        assert_eq!(parse_request("key backspace"), Some(Key(14)));
+        assert_eq!(parse_request("key space"), Some(Key(57)));
+        assert_eq!(parse_request("key bogus"), None);
+        assert_eq!(parse_request("key"), None);
     }
 
     #[test]

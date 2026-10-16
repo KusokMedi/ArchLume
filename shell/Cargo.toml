@@ -9,6 +9,6 @@ name = "archlume-shell"
 path = "src/main.rs"
 
 [dependencies]
-smithay-client-toolkit.workspace = true
+smithay-client-toolkit = { workspace = true, features = ["xkbcommon"] }
 wayland-client.workspace = true
 libc.workspace = true

@@ -199,5 +199,37 @@ shell (`shell/src/apps.rs`), which reads XDG `.desktop` entries.
 future panel button/gesture cannot disagree. The shell stays a renderer of
 compositor state, matching ADR-0007/ADR-0008. Weakness: the shell polls the
 state rather than receiving a push event, so there is up to one poll interval
-(500 ms) of latency; a proper event stream can replace this later. Interactivity
-(search, selection, launch) is not implemented yet.
+(500 ms) of latency; a proper event stream can replace this later.
+
+## ADR-0010 — Keyboard focus for layer surfaces and control-socket key injection
+
+- **Date:** 2026-10-16
+- **Status:** accepted
+
+**Context.** The launcher needs a text search field, so the shell's launcher
+overlay must receive keyboard input. Layer surfaces request this with
+`zwlr_layer_surface_v1` keyboard interactivity, but the compositor must decide
+which surface holds focus. Separately, automated tests must be able to type into
+the shell without injecting input at the *host* session (which would leak
+keystrokes into the developer's real desktop and could trigger host shortcuts —
+this happened during development).
+
+**Decision.** The compositor grants keyboard focus to the top-most layer surface
+that requested `KeyboardInteractivity::Exclusive` (searching overlay, top,
+bottom, background layers in order); when none exists it restores focus to the
+active window (`ArchLume::update_layer_keyboard_focus`, called after a layer
+commit or destruction). The shell requests `Exclusive` on the launcher surface
+and handles keys via SCTK's `KeyboardHandler`.
+
+For tests, the control socket gains `key <name>`, which synthesises a
+press+release through the seat keyboard (delivering to the focused surface). It
+is an automation/debug aid, documented as such, and never executes privileged
+actions. Tests never inject input at the host compositor.
+
+**Consequences.** Launcher interactivity is testable deterministically and
+end-to-end (compositor routing + shell handling + real pixels), with no risk of
+typing into the user's live desktop. The `key` command widens the control
+surface; it is limited to unmodified character keys and a few named keys, so it
+cannot express shortcuts or privileges. Layer-surface focus is recomputed only on
+commit/destroy; a future input-method or grab system may need a more general
+focus policy.

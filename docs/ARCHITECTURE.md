@@ -118,11 +118,16 @@ that places its surfaces with `wlr-layer-shell` through `smithay-client-toolkit`
   open/closed state (bound to `Super + d`) so the keybinding and the shell share
   one source of truth; the shell observes it over the control socket and
   creates/destroys the surface accordingly (ADR-0009).
+- **Launcher interactivity:** the card requests `KeyboardInteractivity::Exclusive`,
+  so the compositor gives it keyboard focus (`update_layer_keyboard_focus`,
+  ADR-0010). Typing filters the entry list, Backspace edits the query, and Enter
+  launches the selected entry via `sh -c` (field codes stripped). Keys are read
+  through SCTK's `KeyboardHandler`; the shell is an interactive seat client.
 - A future **dock** is a separate surface and reserves no screen area when
   disabled.
-- Still to build: panel widgets, launcher, quick settings, notification
-  center/history, lock and login surfaces, OSD, and interactivity (seat,
-  keyboard/pointer) for the shell surfaces.
+- Still to build: panel widgets, quick settings, notification center/history,
+  lock and login surfaces, OSD, pointer interaction, a real font stack, and the
+  compositor-side keyboard-action system.
 
 ## 6. Design system (planned)
 

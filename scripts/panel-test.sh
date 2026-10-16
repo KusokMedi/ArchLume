@@ -72,8 +72,19 @@ for _ in $(seq 1 20); do
 done
 [ -n "$sock_name" ] || fail "compositor did not create a Wayland socket"
 
-# Launch the panel against the nested compositor.
+# Give the launcher a deterministic single application to search for and
+# launch: an isolated XDG data set whose only entry opens a titled window.
+mkdir -p "$RT/xdg/applications" "$RT/xdg-home"
+cat > "$RT/xdg/applications/archlume-test.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=ArchLume Test
+Exec=$CLIENT -T LAUNCHED sh -c 'sleep 20'
+EOF
+
+# Launch the panel against the nested compositor with the isolated app set.
 XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY="$sock_name" \
+  XDG_DATA_DIRS="$RT/xdg" XDG_DATA_HOME="$RT/xdg-home" \
   setsid --fork "$SHELL_BIN" < /dev/null > "$SHELL_LOG" 2>&1
 
 for _ in $(seq 1 40); do
@@ -198,6 +209,14 @@ awk -v f="$title_w" 'BEGIN { exit !(f > 0.02) }' \
   || fail "panel did not render the window title (frac=$title_w)"
 echo "ok: panel shows focused title '$focused' (text frac=$title_w)"
 
+# Close the probe client so the launcher tests run against a clean desktop.
+[ "$(ctl close 0)" = "ok" ] || fail "failed to close the panel test client ($(ctl close 0))"
+for _ in $(seq 1 20); do
+  [ "$(ctl windows)" = "ok 0" ] && break
+  sleep 0.25
+done
+[ "$(ctl windows)" = "ok 0" ] || fail "panel test client did not close"
+
 # Launcher overlay: toggled by the compositor, rendered as a centred navy card.
 [ "$(ctl launcher)" = "ok off" ] || fail "launcher should start off ($(ctl launcher))"
 [ "$(ctl launcher on)" = "ok on" ] || fail "launcher on did not take effect"
@@ -225,6 +244,43 @@ PY
 rc=$?
 [ "$rc" -eq 0 ] || fail "launcher overlay pixels not verified"
 
+# Launcher interactivity: the overlay takes exclusive keyboard focus. Keys are
+# injected through the compositor control socket (never the host session), so
+# typing filters the list and Enter launches the matching application.
+entry_region="200x16+52+236"
+entry_present="$(white_frac "$OUT/panel_launcher.png" "$entry_region")"
+awk -v f="$entry_present" 'BEGIN { exit !(f > 0.02) }' \
+  || fail "launcher did not render the isolated application entry (frac=$entry_present)"
+
+[ "$(ctl key z)" = "ok" ] || fail "key injection failed"
+ctl key z >/dev/null
+ctl key z >/dev/null
+sleep 0.6
+grim -g "$REG" "$OUT/panel_filtered.png" || fail "grim (filtered capture) failed"
+entry_filtered="$(white_frac "$OUT/panel_filtered.png" "$entry_region")"
+awk -v f="$entry_filtered" 'BEGIN { exit !(f < 0.01) }' \
+  || fail "typing did not filter the app list (frac=$entry_filtered)"
+echo "ok: typing filtered the launcher list (entry text frac $entry_present -> $entry_filtered)"
+
+for _ in 1 2 3; do ctl key backspace >/dev/null; done
+sleep 0.6
+grim -g "$REG" "$OUT/panel_query.png" || fail "grim (query cleared) failed"
+entry_again="$(white_frac "$OUT/panel_query.png" "$entry_region")"
+awk -v f="$entry_again" 'BEGIN { exit !(f > 0.02) }' \
+  || fail "clearing the query did not restore the app list (frac=$entry_again)"
+echo "ok: clearing the query restored the app list (frac=$entry_again)"
+
+ctl key return >/dev/null
+launched=""
+for _ in $(seq 1 40); do
+  launched="$(ctl focused)"
+  [ "$launched" = "ok LAUNCHED" ] && break
+  sleep 0.25
+done
+[ "$launched" = "ok LAUNCHED" ] || fail "Enter did not launch the selected app (focused='$launched')"
+echo "ok: Enter launched the selected application (focused='$launched')"
+ctl close 0 >/dev/null 2>&1 || true
+
 [ "$(ctl launcher off)" = "ok off" ] || fail "launcher off did not take effect"
 for _ in $(seq 1 40); do
   [ "$(ctl layers)" = "ok 1" ] && break
@@ -233,4 +289,4 @@ done
 [ "$(ctl layers)" = "ok 1" ] || fail "launcher overlay did not unmap (layers=$(ctl layers))"
 echo "ok: launcher overlay mapped, rendered an app list, and unmapped"
 
-echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock, a live workspace indicator and the active-window title; launcher overlay renders installed apps"
+echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock, a live workspace indicator and the active-window title; the launcher overlay renders installed apps, takes keyboard focus, filters on typing, and launches the selected app on Enter"
