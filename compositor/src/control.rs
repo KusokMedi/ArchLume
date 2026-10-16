@@ -21,6 +21,7 @@
 //! | `window <i>`   | `ok <x> <y> <w> <h>` or `err no such window` |
 //! | `close <i>`    | `ok` or `err no such window`      |
 //! | `stats`        | `ok frames <n> mean <us> max <us>` |
+//! | `preview <zone>` | `ok <x> <y> <w> <h>` or `ok off` |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
@@ -34,7 +35,7 @@ use std::{
 
 use smithay::reexports::calloop::channel::Sender as ControlSender;
 
-use crate::ArchLume;
+use crate::{wm::SnapZone, ArchLume};
 
 /// Channel used by a worker to send a single response line back to a client.
 pub type Reply = ReplySender<String>;
@@ -44,12 +45,28 @@ pub type Reply = ReplySender<String>;
 pub enum Command {
     Ping(Reply),
     CurrentWorkspace(Reply),
-    SwitchWorkspace { number: usize, reply: Reply },
-    MoveFocusedWindow { number: usize, reply: Reply },
+    SwitchWorkspace {
+        number: usize,
+        reply: Reply,
+    },
+    MoveFocusedWindow {
+        number: usize,
+        reply: Reply,
+    },
     ListWindows(Reply),
-    WindowGeometry { index: usize, reply: Reply },
-    CloseWindow { index: usize, reply: Reply },
+    WindowGeometry {
+        index: usize,
+        reply: Reply,
+    },
+    CloseWindow {
+        index: usize,
+        reply: Reply,
+    },
     FrameStats(Reply),
+    SnapPreview {
+        zone: Option<SnapZone>,
+        reply: Reply,
+    },
 }
 
 /// Running control server. Keeps the socket path; the accept thread is
@@ -133,6 +150,7 @@ enum Request {
     Window(usize),
     Close(usize),
     Stats,
+    Preview(Option<SnapZone>),
 }
 
 fn parse_request(line: &str) -> Option<Request> {
@@ -149,8 +167,25 @@ fn parse_request(line: &str) -> Option<Request> {
         "window" => Some(Request::Window(number(&mut parts)?)),
         "close" => Some(Request::Close(number(&mut parts)?)),
         "stats" => Some(Request::Stats),
+        "preview" => Some(Request::Preview(parse_zone(parts.next().unwrap_or("off"))?)),
         _ => None,
     }
+}
+
+/// Map a zone name to an optional snap zone. `off`/`none` clear the preview;
+/// unknown names are rejected.
+fn parse_zone(name: &str) -> Option<Option<SnapZone>> {
+    Some(match name {
+        "off" | "none" => None,
+        "left" => Some(SnapZone::LeftHalf),
+        "right" => Some(SnapZone::RightHalf),
+        "max" | "maximize" => Some(SnapZone::Maximize),
+        "top-left" => Some(SnapZone::TopLeft),
+        "top-right" => Some(SnapZone::TopRight),
+        "bottom-left" => Some(SnapZone::BottomLeft),
+        "bottom-right" => Some(SnapZone::BottomRight),
+        _ => return None,
+    })
 }
 
 fn parse(line: &str, reply: Reply) -> Option<Command> {
@@ -163,6 +198,7 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
         Request::Window(index) => Command::WindowGeometry { index, reply },
         Request::Close(index) => Command::CloseWindow { index, reply },
         Request::Stats => Command::FrameStats(reply),
+        Request::Preview(zone) => Command::SnapPreview { zone, reply },
     })
 }
 
@@ -230,6 +266,17 @@ pub fn handle(command: Command, state: &mut ArchLume) {
                 stats.max_us()
             ));
         }
+        Command::SnapPreview { zone, reply } => match state.set_snap_preview(zone) {
+            Some(rect) => {
+                let _ = reply.send(format!(
+                    "ok {} {} {} {}",
+                    rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32
+                ));
+            }
+            None => {
+                let _ = reply.send("ok off".to_string());
+            }
+        },
     }
 }
 
@@ -247,6 +294,7 @@ fn index_of(number: usize) -> usize {
 mod tests {
     use super::parse_request;
     use super::Request::*;
+    use crate::wm::SnapZone;
 
     #[test]
     fn parses_argumentless_commands() {
@@ -266,6 +314,26 @@ mod tests {
         assert_eq!(parse_request("close 0"), Some(Close(0)));
         // Extra tokens are ignored.
         assert_eq!(parse_request("switch 5 extra"), Some(Switch(5)));
+    }
+
+    #[test]
+    fn parses_preview_zones() {
+        assert_eq!(
+            parse_request("preview left"),
+            Some(Preview(Some(SnapZone::LeftHalf)))
+        );
+        assert_eq!(
+            parse_request("preview right"),
+            Some(Preview(Some(SnapZone::RightHalf)))
+        );
+        assert_eq!(
+            parse_request("preview max"),
+            Some(Preview(Some(SnapZone::Maximize)))
+        );
+        assert_eq!(parse_request("preview off"), Some(Preview(None)));
+        // A bare `preview` clears the overlay.
+        assert_eq!(parse_request("preview"), Some(Preview(None)));
+        assert_eq!(parse_request("preview bogus"), None);
     }
 
     #[test]

@@ -45,6 +45,10 @@ smoke:
 control-test:
 	bash scripts/control-test.sh
 
+# Verify the snap-preview overlay with real pixels (needs a Hyprland host + grim/magick)
+preview-test:
+	bash scripts/snap-preview-test.sh
+
 # Boot the newest ISO in QEMU (UEFI) and verify the live environment via OCR
 boot-test:
 	bash scripts/boot-iso-qemu.sh

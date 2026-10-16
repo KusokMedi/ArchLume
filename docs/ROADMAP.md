@@ -115,8 +115,18 @@ The render loop also feeds a rolling `FrameStats` (120-frame window,
 measurement (a nested run measured mean ~2 ms, max ~9 ms at 60 Hz, within the
 16.67 ms budget) and a hook for the shell's diagnostics.
 
-Still to come: native DRM/libseat startup (plan in `docs/NATIVE-BACKEND.md`),
-gestures, and snap preview.
+The **snap preview** overlay (AGENTS section 6.3) is rendered by the compositor:
+`set_snap_preview` computes the target rectangle with `wm::geometry_for` and the
+winit backend draws it as a translucent solid element. `just preview-test`
+(`scripts/snap-preview-test.sh`) starts the compositor nested, shows the
+left-half preview over the control socket, and verifies with real pixels that the
+left half brightens while the right half and a cleared frame are unchanged
+(measured: left mean 0.098 -> 0.293, right delta 0.000, 0 pixels differ after
+clearing). The overlay is currently driven through the control socket so it can
+be verified without input injection; wiring it to the live drag grab is next.
+
+Still to come: native DRM/libseat startup (plan in `docs/NATIVE-BACKEND.md`) and
+gestures.
 
 Deliverables
 - Smithay-based compositor: session startup, outputs, input, surfaces, basic

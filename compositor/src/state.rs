@@ -1,6 +1,7 @@
 use std::{ffi::OsString, sync::Arc};
 
 use smithay::{
+    backend::renderer::element::solid::SolidColorBuffer,
     desktop::{PopupManager, Space, Window, WindowSurfaceType},
     input::{Seat, SeatState},
     output::Output,
@@ -31,6 +32,9 @@ use crate::{
     CalloopData,
 };
 
+/// Accent colour of the snap preview overlay (RGBA, alpha applied at render).
+const PREVIEW_COLOR: [f32; 4] = [0.55, 0.65, 0.91, 1.0];
+
 pub struct ArchLume {
     pub start_time: std::time::Instant,
     pub socket_name: OsString,
@@ -47,6 +51,10 @@ pub struct ArchLume {
     pub snap_memory: wm::SnapMemory<ObjectId>,
     /// Rolling frame-time statistics for the render loop.
     pub frame_stats: FrameStats,
+    /// Output-relative rectangle of the active snap preview, if any.
+    pub snap_preview: Option<wm::Rect>,
+    /// Backing buffer for the snap preview overlay.
+    pub snap_preview_buffer: SolidColorBuffer,
 
     // Smithay state
     pub compositor_state: CompositorState,
@@ -103,6 +111,8 @@ impl ArchLume {
             workspaces: Workspaces::new(1),
             snap_memory: wm::SnapMemory::new(),
             frame_stats: FrameStats::new(),
+            snap_preview: None,
+            snap_preview_buffer: SolidColorBuffer::new((1, 1), PREVIEW_COLOR),
             socket_name,
 
             compositor_state,
@@ -307,6 +317,45 @@ impl ArchLume {
                 toplevel.send_pending_configure();
             }
         }
+    }
+
+    /// Logical geometry of the primary output in global coordinates.
+    pub fn output_rect(&self) -> wm::Rect {
+        let offset = self.workspaces.current_offset() as f64;
+        let (w, h) = self
+            .output
+            .as_ref()
+            .and_then(|output| output.current_mode())
+            .map(|mode| (mode.size.w as f64, mode.size.h as f64))
+            .unwrap_or((1280.0, 720.0));
+        wm::Rect {
+            x: offset,
+            y: 0.0,
+            w,
+            h,
+        }
+    }
+
+    /// Set (or clear) the snap preview for `zone`. Returns the preview rectangle
+    /// in output-relative coordinates, or `None` when the preview is cleared.
+    pub fn set_snap_preview(&mut self, zone: Option<SnapZone>) -> Option<wm::Rect> {
+        let Some(zone) = zone else {
+            self.snap_preview = None;
+            return None;
+        };
+
+        let offset = self.workspaces.current_offset() as f64;
+        let geo = wm::geometry_for(zone, self.output_rect());
+        let local = wm::Rect {
+            x: geo.x - offset,
+            y: geo.y,
+            w: geo.w,
+            h: geo.h,
+        };
+        self.snap_preview_buffer
+            .update((local.w as i32, local.h as i32), PREVIEW_COLOR);
+        self.snap_preview = Some(local);
+        Some(local)
     }
 
     /// Where a newly opened window should be placed: cascaded from the top-left

@@ -3,14 +3,15 @@ use std::time::{Duration, Instant};
 use smithay::{
     backend::{
         renderer::{
-            damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement,
+            damage::OutputDamageTracker,
+            element::{solid::SolidColorRenderElement, Kind},
             gles::GlesRenderer,
         },
         winit::{self, WinitEvent},
     },
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::calloop::EventLoop,
-    utils::{Rectangle, Transform},
+    utils::{Physical, Point, Rectangle, Transform},
 };
 
 use crate::{ArchLume, CalloopData};
@@ -22,7 +23,7 @@ pub fn init_winit(
     let display_handle = &mut data.display_handle;
     let state = &mut data.state;
 
-    let (mut backend, winit) = winit::init()?;
+    let (mut backend, winit) = winit::init::<GlesRenderer>()?;
 
     let mode = Mode {
         size: backend.window_size(),
@@ -84,21 +85,28 @@ pub fn init_winit(
 
                     let frame_start = Instant::now();
 
+                    // Build the snap-preview overlay for this frame, if any.
+                    let mut custom: Vec<SolidColorRenderElement> = Vec::new();
+                    if let Some(preview) = state.snap_preview {
+                        custom.push(SolidColorRenderElement::from_buffer(
+                            &state.snap_preview_buffer,
+                            Point::<i32, Physical>::from((preview.x as i32, preview.y as i32)),
+                            1.0,
+                            0.35,
+                            Kind::Unspecified,
+                        ));
+                    }
+
                     {
                         let (renderer, mut framebuffer) = backend.bind().unwrap();
-                        smithay::desktop::space::render_output::<
-                            _,
-                            WaylandSurfaceRenderElement<GlesRenderer>,
-                            _,
-                            _,
-                        >(
+                        smithay::desktop::space::render_output::<_, SolidColorRenderElement, _, _>(
                             &output,
                             renderer,
                             &mut framebuffer,
                             1.0,
                             0,
                             [&state.space],
-                            &[],
+                            &custom,
                             &mut damage_tracker,
                             [0.1, 0.1, 0.1, 1.0],
                         )

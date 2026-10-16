@@ -78,12 +78,14 @@ During development the compositor runs as a client of the host Wayland session
 just run-nested     # cargo run -p archlume-compositor
 just smoke          # nested smoke test: a client maps a window and exits
 just control-test   # drive workspace state over the control socket
+just preview-test   # verify the snap-preview overlay with real pixels
 ```
 
 The compositor exposes a line-based control socket at
 `$XDG_RUNTIME_DIR/archlume-control.sock` (path also in `$ARCHLUME_CONTROL`); see
 `compositor/src/control.rs` and ADR-0007. Commands: `ping`, `workspace`,
-`switch <n>`, `move <n>`, `windows`, `window <i>`, `close <i>`, `stats`.
+`switch <n>`, `move <n>`, `windows`, `window <i>`, `close <i>`, `stats`,
+`preview <zone|off>`.
 `just control-test` uses it to verify workspace switching, window counting,
 focus-on-open, moving a window, cascade placement, close and frame stats at
 runtime without needing to inject input events.
