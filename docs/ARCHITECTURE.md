@@ -103,7 +103,13 @@ that places its surfaces with `wlr-layer-shell` through `smithay-client-toolkit`
 
 - **Panel** (top only by default) is a `Layer::Top` surface with an exclusive
   zone. The first slice draws a 28 px bar across the output with `wl_shm`,
-  verified by `scripts/panel-test.sh` (`just panel-test`).
+  showing a brand label and a live local clock; verified by
+  `scripts/panel-test.sh` (`just panel-test`).
+- **Text** currently uses a small self-contained 5x7 bitmap font
+  (`shell/src/font.rs`) so there is no external font asset or third-party font
+  licence while the project licence is undecided. A proper vector-font stack
+  (e.g. cosmic-text + a licensed font) replaces it later without changing the
+  drawing call sites.
 - A future **dock** is a separate surface and reserves no screen area when
   disabled.
 - Still to build: panel widgets, launcher, quick settings, notification

@@ -92,8 +92,9 @@ focus-on-open, moving a window, cascade placement, close and frame stats at
 runtime without needing to inject input events.
 
 The desktop shell is the separate `archlume-shell` crate. It connects to a
-running compositor and places a top panel with `wlr-layer-shell`; run it against
-the nested compositor with:
+running compositor and places a top panel with `wlr-layer-shell`, drawing a
+brand label and a live local clock with a self-contained bitmap font
+(`shell/src/font.rs`). Run it against the nested compositor with:
 
 ```sh
 cargo build -p archlume-compositor -p archlume-shell

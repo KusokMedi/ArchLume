@@ -163,8 +163,10 @@ Progress
 - [x] `archlume-shell` client crate: a top-layer panel surface drawn with
       `wl_shm`, mapped by the compositor and verified with real pixels
       (`just panel-test`).
-- [ ] Panel widgets, launcher, quick settings, notification center, theming,
-      keyboard action system.
+- [x] Panel content: a live local clock (self-contained bitmap font) that
+      redraws each second while the brand label stays fixed (`just panel-test`).
+- [ ] Real font stack, more panel widgets, launcher, quick settings,
+      notification center, theming, keyboard action system.
 
 Acceptance criteria
 - [ ] Panel/launcher/quick settings reflect real system state.

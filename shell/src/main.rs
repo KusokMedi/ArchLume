@@ -1,11 +1,20 @@
-//! ArchLume panel (Milestone 5, first slice).
+//! ArchLume panel (Milestone 5).
 //!
 //! A Wayland client that asks the compositor for a top-layer surface via
-//! wlr-layer-shell and draws a flat bar with `wl_shm`. This first slice proves
-//! the whole shell pipeline (layer protocol, separate client, compositor
-//! rendering); text, widgets and interactivity build on top of it.
+//! wlr-layer-shell and draws a bar with `wl_shm`. It shows a live local clock
+//! on the right and a brand label on the left; widgets, launcher integration
+//! and interactivity build on top of this.
 //!
-//! It intentionally uses only `smithay-client-toolkit` and `wayland-client`.
+//! Intentionally depends only on `smithay-client-toolkit`, `wayland-client`
+//! and `libc` (for local time); text uses the self-contained bitmap font in
+//! `font.rs`.
+
+mod font;
+
+use std::{
+    os::fd::AsRawFd,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -30,8 +39,16 @@ use wayland_client::{
 
 /// Panel height in logical pixels.
 const PANEL_HEIGHT: u32 = 28;
-/// Panel colour (sRGB), matching the ArchLume accent.
+/// Panel background (sRGB), the ArchLume accent.
 const PANEL_COLOR: [u8; 3] = [0x1E, 0x88, 0xE5];
+/// Text colour.
+const TEXT_COLOR: [u8; 3] = [0xFF, 0xFF, 0xFF];
+/// Bitmap-font scale.
+const TEXT_SCALE: u32 = 2;
+/// Horizontal padding for text.
+const PAD: i32 = 10;
+/// How long to wait for Wayland events before ticking the clock (ms).
+const POLL_INTERVAL_MS: libc::c_int = 250;
 
 fn main() {
     let conn = Connection::connect_to_env().expect("connect to Wayland display");
@@ -60,15 +77,50 @@ fn main() {
         pool,
         layer,
         exit: false,
-        configured: false,
+        width: 0,
+        height: PANEL_HEIGHT,
+        clock: String::new(),
     };
 
     loop {
-        event_queue.blocking_dispatch(&mut panel).expect("dispatch");
+        event_queue.dispatch_pending(&mut panel).expect("dispatch");
         if panel.exit {
             break;
         }
+        // Tick the clock (redraws only when the text changes).
+        let now = clock_string();
+        if panel.width > 0 && now != panel.clock {
+            panel.clock = now;
+            panel.draw(&qh);
+        }
+        event_queue.flush().expect("flush");
+        // Block up to a short interval, then loop so the clock keeps ticking.
+        if let Some(guard) = event_queue.prepare_read() {
+            let mut pfd = libc::pollfd {
+                fd: guard.connection_fd().as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let ready = unsafe { libc::poll(&mut pfd, 1, POLL_INTERVAL_MS) };
+            if ready > 0 && pfd.revents & libc::POLLIN != 0 {
+                let _ = guard.read();
+            }
+        }
     }
+}
+
+/// Local wall-clock time as `HH:MM:SS` via the C library's `localtime_r`.
+fn clock_string() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as libc::time_t)
+        .unwrap_or(0);
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    let ok = unsafe { libc::localtime_r(&secs, &mut tm) };
+    if ok.is_null() {
+        return "--:--:--".to_string();
+    }
+    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
 }
 
 struct Panel {
@@ -78,11 +130,14 @@ struct Panel {
     pool: SlotPool,
     layer: LayerSurface,
     exit: bool,
-    configured: bool,
+    width: u32,
+    height: u32,
+    clock: String,
 }
 
 impl Panel {
-    fn draw(&mut self, qh: &QueueHandle<Self>, width: u32, height: u32) {
+    fn draw(&mut self, qh: &QueueHandle<Self>) {
+        let (width, height) = (self.width, self.height);
         let stride = width as i32 * 4;
         let (buffer, canvas) = self
             .pool
@@ -94,11 +149,17 @@ impl Panel {
             )
             .expect("create shm buffer");
 
-        // wl_shm Argb8888 is little-endian: [b, g, r, a].
-        let [r, g, b] = PANEL_COLOR;
-        for pixel in canvas.chunks_exact_mut(4) {
-            pixel.copy_from_slice(&[b, g, r, 0xFF]);
-        }
+        let mut canvas = font::Canvas {
+            data: canvas,
+            width,
+            height,
+        };
+        canvas.fill(PANEL_COLOR);
+
+        let text_y = ((height as i32) - (7 * TEXT_SCALE) as i32) / 2;
+        canvas.draw_text(PAD, text_y, TEXT_SCALE, "ARCHLUME", TEXT_COLOR);
+        let clock_x = width as i32 - PAD - font::text_width(&self.clock, TEXT_SCALE) as i32;
+        canvas.draw_text(clock_x, text_y, TEXT_SCALE, &self.clock, TEXT_COLOR);
 
         let surface = self.layer.wl_surface();
         surface.damage_buffer(0, 0, width as i32, height as i32);
@@ -134,7 +195,7 @@ impl CompositorHandler for Panel {
         _surface: &wl_surface::WlSurface,
         _time: u32,
     ) {
-        // The bar is static; nothing to redraw.
+        // Redraws are driven by the clock, not by frame callbacks.
     }
 
     fn surface_enter(
@@ -186,10 +247,13 @@ impl LayerShellHandler for Panel {
         if height == 0 {
             height = PANEL_HEIGHT;
         }
-        // Draw the bar once, after the compositor has told us our size.
-        if !self.configured {
-            self.configured = true;
-            self.draw(qh, width, height);
+        let resized = width != self.width || height != self.height;
+        self.width = width;
+        self.height = height;
+        // Draw once we know our size (and on any resize).
+        if resized || self.clock.is_empty() {
+            self.clock = clock_string();
+            self.draw(qh);
         }
     }
 }

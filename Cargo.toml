@@ -16,3 +16,4 @@ smithay = { version = "0.7.0", default-features = false, features = [
 ] }
 smithay-client-toolkit = { version = "0.19.2", default-features = false }
 wayland-client = "0.31.15"
+libc = "0.2.190"
