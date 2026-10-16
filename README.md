@@ -69,7 +69,9 @@ See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## License
 
-**Undecided.** ArchLume currently carries no license and must not be published
-under one until the project owner makes an explicit licensing decision
-(`AGENTS.md` §20). Do not add a `LICENSE` file or license headers without that
-decision. Third-party components retain their own licenses and attributions.
+**Temporary — read-only, all rights reserved** (see [`LICENSE`](LICENSE)). This
+is a deliberately restrictive, temporary notice chosen by the project owner:
+you may only read the repository; no use, build, distribution, or derivative
+works are permitted anywhere. It will be replaced when the owner publishes a
+new license. Third-party components retain their own licenses and attributions
+(`AGENTS.md` §20).

@@ -596,7 +596,7 @@ Test accessible states as part of component acceptance. Do not claim support for
 
 ## 20. Licensing and Open Source
 
-The project license is **undecided**. Do not select or invent a project license automatically, and do not publish the project under a random license. Continue private/local development as appropriate, but before public distribution, the owner must make an explicit licensing decision.
+The project license is currently a **temporary, restrictive "read-only, all rights reserved" notice** (`LICENSE`), chosen explicitly by the project owner on 2026-10-16: others may only read the repository, and may not use, build, distribute, or create derivative works from it anywhere. This is not a final open-source license. It remains in place until the owner publishes a new license; only the owner may change it. Do not add license headers or otherwise relicense without the owner's explicit instruction. Before any open/public distribution under a permissive license, the owner must still make that final licensing decision.
 
 Respect all third-party licenses from the beginning. Maintain attribution and notices required by dependencies. A custom license does not remove obligations imposed by third-party components. If the unresolved licensing choice blocks a particular public publication, pause that publication and continue safe work elsewhere.
 

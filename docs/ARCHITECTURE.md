@@ -20,7 +20,8 @@ Hard constraints from [`AGENTS.md`](../AGENTS.md):
   1366x768). Baseline target: any x86_64 with 8 GB RAM.
 - Free infrastructure only; never incur charges.
 - English-first, localization-ready (strings separated from logic).
-- License undecided; no public distribution until the owner decides.
+- License is a temporary read-only, all-rights-reserved notice (`LICENSE`); no
+  use or distribution beyond reading until the owner publishes a new license.
 
 Primary quality bar: **smoothness and consistency**. Frame budget at 60 Hz is
 ~16.67 ms; at 144 Hz ~6.94 ms. Heavy work (package ops, filesystem scans,
@@ -190,4 +191,5 @@ Existing releases must never be silently deleted to hide capacity problems.
   must cache aggressively and queue when quotas are exhausted.
 - **Signing root of trust** on free CI (section 7).
 - **NVIDIA specifics** are unverified; no universal support will be claimed.
-- **Licensing** blocks public distribution until decided.
+- **Licensing** — temporary read-only notice in place; a final license is
+  required before any permissive public distribution.
