@@ -24,10 +24,13 @@
 //! | `preview <zone>` | `ok <x> <y> <w> <h>` or `ok off` |
 //! | `gesture <fingers> <dx> <dy>` | `ok prev|next <n>` or `ok none` |
 //! | `layers`       | `ok <count>` (mapped layer surfaces) |
+//! | `layer <i>`    | `ok <x> <y> <w> <h>` or `err no such layer` |
 //! | `focused`      | `ok <title>` or `ok -` (focused window title) |
 //! | `launcher`     | `ok on\|off` (query the launcher state) |
 //! | `launcher on\|off\|toggle` | `ok on\|off` (set/toggle the launcher) |
 //! | `key <name>`   | `ok` (inject a key press+release; automation/debug) |
+//! | `pointer move <x> <y>` | `ok` (move the pointer; automation/debug) |
+//! | `pointer click <x> <y>` | `ok` (left click at a point; automation/debug) |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
@@ -46,8 +49,12 @@ use std::{
 };
 
 use smithay::{
-    backend::input::KeyState, desktop::layer_map_for_output, input::keyboard::FilterResult,
-    reexports::calloop::channel::Sender as ControlSender, utils::SERIAL_COUNTER,
+    backend::input::KeyState,
+    desktop::layer_map_for_output,
+    input::keyboard::FilterResult,
+    reexports::calloop::channel::Sender as ControlSender,
+    utils::{Logical, Point, Rectangle, SERIAL_COUNTER},
+    wayland::shell::wlr_layer::Layer as WlrLayer,
 };
 
 use crate::{
@@ -93,11 +100,25 @@ pub enum Command {
         reply: Reply,
     },
     LayerCount(Reply),
+    LayerGeometry {
+        index: usize,
+        reply: Reply,
+    },
     FocusedTitle(Reply),
     LauncherState(Reply),
     SetLauncher(Option<bool>, Reply),
     InjectKey {
         code: u32,
+        reply: Reply,
+    },
+    PointerMove {
+        x: f64,
+        y: f64,
+        reply: Reply,
+    },
+    PointerClick {
+        x: f64,
+        y: f64,
         reply: Reply,
     },
 }
@@ -186,10 +207,13 @@ enum Request {
     Preview(Option<SnapZone>),
     Gesture(u8, f64, f64),
     Layers,
+    Layer(usize),
     Focused,
     Launcher,
     SetLauncher(Option<bool>),
     Key(u32),
+    PointerMove(f64, f64),
+    PointerClick(f64, f64),
 }
 
 fn parse_request(line: &str) -> Option<Request> {
@@ -202,6 +226,7 @@ fn parse_request(line: &str) -> Option<Request> {
         "workspace" => Some(Request::CurrentWorkspace),
         "windows" => Some(Request::ListWindows),
         "layers" => Some(Request::Layers),
+        "layer" => Some(Request::Layer(number(&mut parts)?)),
         "focused" => Some(Request::Focused),
         "launcher" => Some(match parts.next() {
             None => Request::Launcher,
@@ -211,6 +236,16 @@ fn parse_request(line: &str) -> Option<Request> {
             Some(_) => return None,
         }),
         "key" => Some(Request::Key(keycode(parts.next()?)?)),
+        "pointer" => {
+            let kind = parts.next()?;
+            let x: f64 = parts.next()?.parse().ok()?;
+            let y: f64 = parts.next()?.parse().ok()?;
+            match kind {
+                "move" => Some(Request::PointerMove(x, y)),
+                "click" => Some(Request::PointerClick(x, y)),
+                _ => None,
+            }
+        }
         "switch" => Some(Request::Switch(number(&mut parts)?)),
         "move" => Some(Request::Move(number(&mut parts)?)),
         "window" => Some(Request::Window(number(&mut parts)?)),
@@ -326,10 +361,13 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
             reply,
         },
         Request::Layers => Command::LayerCount(reply),
+        Request::Layer(index) => Command::LayerGeometry { index, reply },
         Request::Focused => Command::FocusedTitle(reply),
         Request::Launcher => Command::LauncherState(reply),
         Request::SetLauncher(open) => Command::SetLauncher(open, reply),
         Request::Key(code) => Command::InjectKey { code, reply },
+        Request::PointerMove(x, y) => Command::PointerMove { x, y, reply },
+        Request::PointerClick(x, y) => Command::PointerClick { x, y, reply },
     })
 }
 
@@ -439,6 +477,17 @@ pub fn handle(command: Command, state: &mut ArchLume) {
                 .sum();
             let _ = reply.send(format!("ok {count}"));
         }
+        Command::LayerGeometry { index, reply } => match layer_geometry_at(state, index) {
+            Some(geo) => {
+                let _ = reply.send(format!(
+                    "ok {} {} {} {}",
+                    geo.loc.x, geo.loc.y, geo.size.w, geo.size.h
+                ));
+            }
+            None => {
+                let _ = reply.send("err no such layer".to_string());
+            }
+        },
         Command::LauncherState(reply) => {
             let _ = reply.send(format!("ok {}", on_off(state.launcher_open)));
         }
@@ -466,6 +515,16 @@ pub fn handle(command: Command, state: &mut ArchLume) {
             }
             let _ = reply.send("ok".to_string());
         }
+        Command::PointerMove { x, y, reply } => {
+            let pos = Point::from((x, y));
+            state.pointer_motion_at(pos, now_msec());
+            let _ = reply.send("ok".to_string());
+        }
+        Command::PointerClick { x, y, reply } => {
+            let pos = Point::from((x, y));
+            state.pointer_click_at(pos, now_msec());
+            let _ = reply.send("ok".to_string());
+        }
         Command::FocusedTitle(reply) => {
             let title = state
                 .focused_window_title()
@@ -475,6 +534,35 @@ pub fn handle(command: Command, state: &mut ArchLume) {
             let _ = reply.send(format!("ok {title}"));
         }
     }
+}
+
+/// Geometry (compositor-global) of the `index`-th mapped layer surface,
+/// ordered overlay, top, bottom, background across all outputs.
+fn layer_geometry_at(state: &ArchLume, index: usize) -> Option<Rectangle<i32, Logical>> {
+    let order = [
+        WlrLayer::Overlay,
+        WlrLayer::Top,
+        WlrLayer::Bottom,
+        WlrLayer::Background,
+    ];
+    let mut count = 0usize;
+    for output in state.space.outputs() {
+        let Some(origin) = state.space.output_geometry(output).map(|g| g.loc) else {
+            continue;
+        };
+        let map = layer_map_for_output(output);
+        for kind in order {
+            for layer in map.layers_on(kind) {
+                if let Some(geo) = map.layer_geometry(layer) {
+                    if count == index {
+                        return Some(Rectangle::new(origin + geo.loc, geo.size));
+                    }
+                    count += 1;
+                }
+            }
+        }
+    }
+    None
 }
 
 /// User-facing, 1-based workspace number of the active workspace.
@@ -499,6 +587,8 @@ mod tests {
         assert_eq!(parse_request("workspace"), Some(CurrentWorkspace));
         assert_eq!(parse_request("windows"), Some(ListWindows));
         assert_eq!(parse_request("layers"), Some(Layers));
+        assert_eq!(parse_request("layer 0"), Some(Layer(0)));
+        assert_eq!(parse_request("layer"), None);
         assert_eq!(parse_request("focused"), Some(Focused));
         assert_eq!(parse_request("launcher"), Some(Launcher));
         assert_eq!(parse_request("launcher on"), Some(SetLauncher(Some(true))));
@@ -522,6 +612,21 @@ mod tests {
         assert_eq!(parse_request("key space"), Some(Key(57)));
         assert_eq!(parse_request("key bogus"), None);
         assert_eq!(parse_request("key"), None);
+    }
+
+    #[test]
+    fn parses_pointer_commands() {
+        assert_eq!(
+            parse_request("pointer move 100 200"),
+            Some(PointerMove(100.0, 200.0))
+        );
+        assert_eq!(
+            parse_request("pointer click 12.5 33"),
+            Some(PointerClick(12.5, 33.0))
+        );
+        assert_eq!(parse_request("pointer tap 1 2"), None);
+        assert_eq!(parse_request("pointer click 1"), None);
+        assert_eq!(parse_request("pointer"), None);
     }
 
     #[test]

@@ -178,6 +178,9 @@ Progress
 - [x] Panel reflects real system state: a battery indicator reads
       `/sys/class/power_supply` and updates live (`just panel-test` feeds a fake
       sysfs dir and checks the value follows).
+- [x] Pointer interactivity: the compositor routes the pointer to layer
+      surfaces; clicking a launcher row launches that app (`just panel-test`
+      clicks via the control socket).
 - [ ] Real font stack, more panel widgets (network/audio), quick settings,
       notification center, theming, keyboard action system.
 

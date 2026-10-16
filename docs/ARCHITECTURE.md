@@ -126,10 +126,15 @@ that places its surfaces with `wlr-layer-shell` through `smithay-client-toolkit`
   ADR-0010). Typing filters the entry list, Backspace edits the query, and Enter
   launches the selected entry via `sh -c` (field codes stripped). Keys are read
   through SCTK's `KeyboardHandler`; the shell is an interactive seat client.
+- **Pointer routing:** `surface_under` checks the overlay/top layer maps before
+  windows (bottom/background after), so the pointer can reach layer surfaces. A
+  pointer press on a launcher row launches that row; presses over a layer surface
+  do not change window focus. The shell handles pointer frames with SCTK's
+  `PointerHandler`.
 - A future **dock** is a separate surface and reserves no screen area when
   disabled.
-- Still to build: panel widgets, quick settings, notification center/history,
-  lock and login surfaces, OSD, pointer interaction, a real font stack, and the
+- Still to build: more panel widgets, quick settings, notification center/history,
+  lock and login surfaces, OSD, hover states, a real font stack, and the
   compositor-side keyboard-action system.
 
 ## 6. Design system (planned)

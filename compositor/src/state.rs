@@ -185,13 +185,55 @@ impl ArchLume {
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        self.space
-            .element_under(pos)
-            .and_then(|(window, location)| {
-                window
-                    .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(s, p)| (s, (p + location).to_f64()))
-            })
+        // Layer surfaces on the overlay/top layers sit above windows; the
+        // bottom/background layers sit below them.
+        for kind in [WlrLayer::Overlay, WlrLayer::Top] {
+            if let Some(hit) = self.layer_surface_under(pos, kind) {
+                return Some(hit);
+            }
+        }
+        if let Some((window, location)) = self.space.element_under(pos) {
+            if let Some((surface, point)) =
+                window.surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
+            {
+                return Some((surface, (point + location).to_f64()));
+            }
+        }
+        for kind in [WlrLayer::Bottom, WlrLayer::Background] {
+            if let Some(hit) = self.layer_surface_under(pos, kind) {
+                return Some(hit);
+            }
+        }
+        None
+    }
+
+    /// The layer surface under `pos` on the given layer, with the global
+    /// position of that surface's origin.
+    fn layer_surface_under(
+        &self,
+        pos: Point<f64, Logical>,
+        kind: WlrLayer,
+    ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        for output in self.space.outputs() {
+            let Some(output_geo) = self.space.output_geometry(output) else {
+                continue;
+            };
+            let output_origin = output_geo.loc.to_f64();
+            let map = layer_map_for_output(output);
+            let Some(layer) = map.layer_under(kind, pos - output_origin) else {
+                continue;
+            };
+            let Some(geometry) = map.layer_geometry(layer) else {
+                continue;
+            };
+            let origin = output_origin + geometry.loc.to_f64();
+            if let Some((surface, offset)) =
+                layer.surface_under(pos - origin, WindowSurfaceType::ALL)
+            {
+                return Some((surface, offset.to_f64() + origin));
+            }
+        }
+        None
     }
 
     /// Apply a snap zone to `window`: move it to the target geometry and ask
@@ -400,7 +442,7 @@ impl ArchLume {
     }
 
     /// Whether `surface` belongs to a mapped layer surface.
-    fn is_layer_surface(&self, surface: &WlSurface) -> bool {
+    pub(crate) fn is_layer_surface(&self, surface: &WlSurface) -> bool {
         self.space.outputs().any(|output| {
             layer_map_for_output(output)
                 .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)

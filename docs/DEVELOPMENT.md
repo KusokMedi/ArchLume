@@ -86,18 +86,21 @@ The compositor exposes a line-based control socket at
 `$XDG_RUNTIME_DIR/archlume-control.sock` (path also in `$ARCHLUME_CONTROL`); see
 `compositor/src/control.rs` and ADR-0007. Commands: `ping`, `workspace`,
 `switch <n>`, `move <n>`, `windows`, `window <i>`, `close <i>`, `stats`,
-`preview <zone|off>`, `gesture <fingers> <dx> <dy>`, `layers`, `focused`,
-`launcher [on|off|toggle]`, `key <name>`.
-`just control-test` uses it to verify workspace switching, window counting,
-focus-on-open, moving a window, cascade placement, close and frame stats at
-runtime without needing to inject input events.
+`preview <zone|off>`, `gesture <fingers> <dx> <dy>`, `layers`, `layer <i>`,
+`focused`, `launcher [on|off|toggle]`, `key <name>`, `pointer move <x> <y>`,
+`pointer click <x> <y>`. `layer <i>` returns the geometry (compositor-global) of
+the `i`-th mapped layer surface; it lets tests compute exact pointer targets.
+`just control-test` uses the socket to verify workspace switching, window
+counting, focus-on-open, moving a window, cascade placement, close and frame
+stats at runtime without needing to inject input events.
 
-`key <name>` synthesises a press+release through the seat keyboard and delivers
-it to whichever surface currently holds keyboard focus; `name` is a single
-character (`a`-`z`, `0`-`9`) or `space`/`backspace`/`return`/`escape`/`tab`. It is
-an automation/debug aid: it lets tests (e.g. `just panel-test`) drive the shell's
-launcher search field without injecting input at the host session. It is never
-used to run privileged actions.
+`key <name>`, `pointer move` and `pointer click` synthesise input through the
+seat and deliver it to whatever surface is focused (keyboard) or under the point
+(pointer); `name` is a single character (`a`-`z`, `0`-`9`) or
+`space`/`backspace`/`return`/`escape`/`tab`. They are automation/debug aids: they
+let tests (e.g. `just panel-test`) drive the shell's launcher — search, Enter and
+row clicks — without injecting input at the host session (ADR-0010). They are
+never used to run privileged actions.
 
 The desktop shell is the separate `archlume-shell` crate. It connects to a
 running compositor and places a top panel with `wlr-layer-shell`, drawing a

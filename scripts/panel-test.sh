@@ -286,6 +286,34 @@ done
 echo "ok: Enter launched the selected application (focused='$launched')"
 ctl close 0 >/dev/null 2>&1 || true
 
+# Pointer interactivity: clicking a launcher row launches that application.
+# The click is delivered through the compositor control socket (never the host
+# session). The launcher geometry is read from the compositor so the click
+# point is exact regardless of output origin or reserved panel area.
+[ "$(ctl launcher on)" = "ok on" ] || fail "launcher on (pointer test) failed"
+for _ in $(seq 1 40); do
+  [ "$(ctl layers)" = "ok 2" ] && break
+  sleep 0.25
+done
+[ "$(ctl layers)" = "ok 2" ] || fail "launcher did not remap for the pointer test"
+sleep 0.6
+# Entry 0 sits at overlay-local (80, 86) (text starts at x=20, rows at y=76).
+layer_geo="$(ctl layer 0)"
+[ "${layer_geo%% *}" = "ok" ] || fail "could not read launcher geometry ($layer_geo)"
+read -r _ LX LY _ _ <<< "$layer_geo"
+click_x=$(( LX + 80 ))
+click_y=$(( LY + 86 ))
+[ "$(ctl pointer click "$click_x" "$click_y")" = "ok" ] || fail "pointer click injection failed"
+launched=""
+for _ in $(seq 1 40); do
+  launched="$(ctl focused)"
+  [ "$launched" = "ok LAUNCHED" ] && break
+  sleep 0.25
+done
+[ "$launched" = "ok LAUNCHED" ] || fail "pointer click did not launch the selected app (focused='$launched')"
+echo "ok: clicking a launcher row launched the application (focused='$launched')"
+ctl close 0 >/dev/null 2>&1 || true
+
 [ "$(ctl launcher off)" = "ok off" ] || fail "launcher off did not take effect"
 for _ in $(seq 1 40); do
   [ "$(ctl layers)" = "ok 1" ] && break
@@ -317,4 +345,4 @@ awk -v d="${bat_diff:-0}" 'BEGIN { exit !(d > 0) }' \
   || fail "battery widget did not follow the value change (diff=$bat_diff)"
 echo "ok: battery widget reflected capacity change 42% -> 87% (diff=$bat_diff)"
 
-echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock, a live workspace indicator, the active-window title and the battery level; the launcher overlay renders installed apps, takes keyboard focus, filters on typing, and launches the selected app on Enter"
+echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock, a live workspace indicator, the active-window title and the battery level; the launcher overlay renders installed apps, takes keyboard focus, filters on typing, launches the selected app on Enter or by pointer click"

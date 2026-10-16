@@ -8,10 +8,13 @@ use smithay::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
-    utils::SERIAL_COUNTER,
+    utils::{Logical, Point, SERIAL_COUNTER},
 };
 
 use crate::state::ArchLume;
+
+/// `BTN_LEFT` from `linux/input-event-codes.h`.
+const BTN_LEFT: u32 = 0x110;
 
 impl ArchLume {
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
@@ -89,7 +92,13 @@ impl ArchLume {
 
                 let button_state = event.state();
 
-                if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
+                // A click on a layer surface (e.g. the launcher) must keep that
+                // surface's keyboard focus; only window clicks raise/refocus.
+                let over_layer = self
+                    .surface_under(pointer.current_location())
+                    .is_some_and(|(surface, _)| self.is_layer_surface(&surface));
+
+                if ButtonState::Pressed == button_state && !pointer.is_grabbed() && !over_layer {
                     if let Some((window, _loc)) = self
                         .space
                         .element_under(pointer.current_location())
@@ -164,6 +173,45 @@ impl ArchLume {
                 pointer.frame(self);
             }
             _ => {}
+        }
+    }
+
+    /// Move the pointer to `pos`, delivering motion to whatever window or layer
+    /// surface sits under it.
+    pub fn pointer_motion_at(&mut self, pos: Point<f64, Logical>, time: u32) {
+        let serial = SERIAL_COUNTER.next_serial();
+        let pointer = self.seat.get_pointer().unwrap();
+        let under = self.surface_under(pos);
+        pointer.motion(
+            self,
+            under,
+            &MotionEvent {
+                location: pos,
+                serial,
+                time,
+            },
+        );
+        pointer.frame(self);
+    }
+
+    /// Press and release the left pointer button at `pos`. Driven by the control
+    /// socket so pointer interaction can be tested without injecting events into
+    /// the host session (ADR-0010).
+    pub fn pointer_click_at(&mut self, pos: Point<f64, Logical>, time: u32) {
+        self.pointer_motion_at(pos, time);
+        let pointer = self.seat.get_pointer().unwrap();
+        for state in [ButtonState::Pressed, ButtonState::Released] {
+            let serial = SERIAL_COUNTER.next_serial();
+            pointer.button(
+                self,
+                &ButtonEvent {
+                    button: BTN_LEFT,
+                    state,
+                    serial,
+                    time,
+                },
+            );
+            pointer.frame(self);
         }
     }
 }

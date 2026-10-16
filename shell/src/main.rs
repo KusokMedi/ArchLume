@@ -25,13 +25,14 @@ use std::{
 
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_registry,
-    delegate_seat, delegate_shm,
+    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
+    delegate_registry, delegate_seat, delegate_shm,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
         keyboard::{KeyEvent, KeyboardHandler, Modifiers},
+        pointer::{PointerEvent, PointerEventKind, PointerHandler, BTN_LEFT},
         Capability, SeatHandler, SeatState,
     },
     shell::{
@@ -45,7 +46,7 @@ use smithay_client_toolkit::{
 };
 use wayland_client::{
     globals::registry_queue_init,
-    protocol::{wl_keyboard, wl_output, wl_seat, wl_shm, wl_surface},
+    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface},
     Connection, QueueHandle,
 };
 
@@ -78,6 +79,9 @@ const LAUNCHER_H: u32 = 400;
 const LAUNCHER_BG: [u8; 3] = [0x10, 0x1B, 0x2E];
 /// Maximum number of application entries drawn in the launcher.
 const MAX_APPS: usize = 14;
+/// Vertical position of the first launcher entry and the row spacing.
+const ENTRY_TOP: i32 = 76;
+const ENTRY_H: i32 = 20;
 /// Maximum length of the launcher search query.
 const MAX_QUERY: usize = 32;
 /// X11 keysyms handled specially by the launcher (`xkeysym`).
@@ -133,6 +137,7 @@ fn main() {
         seat_state,
         seat: None,
         keyboard: None,
+        pointer: None,
         query: String::new(),
         redraw: false,
     };
@@ -263,6 +268,7 @@ struct Panel {
     seat_state: SeatState,
     seat: Option<wl_seat::WlSeat>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    pointer: Option<wl_pointer::WlPointer>,
     query: String,
     redraw: bool,
 }
@@ -310,13 +316,19 @@ impl Panel {
             .collect()
     }
 
-    /// Launches the first application matching the current query. The command
-    /// is run through the shell so that field codes and quoting behave like a
-    /// normal `.desktop` launch; the child inherits the Wayland environment.
-    fn launch_selected(&mut self) {
+    /// Number of entries shown in the launcher (filtered, capped).
+    fn visible_count(&self) -> usize {
+        self.filtered().len().min(MAX_APPS)
+    }
+
+    /// Launches the `index`-th application of the current filtered list. The
+    /// command is run through the shell so that field codes and quoting behave
+    /// like a normal `.desktop` launch; the child inherits the Wayland
+    /// environment. Always closes the launcher.
+    fn launch_index(&mut self, index: usize) {
         let command = self
             .filtered()
-            .first()
+            .get(index)
             .map(|app| apps::strip_field_codes(&app.exec));
         if let Some(command) = command {
             if !command.is_empty() {
@@ -330,6 +342,21 @@ impl Panel {
             }
         }
         self.close_launcher();
+    }
+
+    /// Launches the first application matching the current query.
+    fn launch_selected(&mut self) {
+        self.launch_index(0);
+    }
+
+    /// The launcher entry whose row contains `y` (surface-local logical
+    /// pixels), if any. Entries start at `ENTRY_TOP` with `ENTRY_H` spacing.
+    fn entry_at(&self, y: f64) -> Option<usize> {
+        if y < ENTRY_TOP as f64 {
+            return None;
+        }
+        let index = ((y - ENTRY_TOP as f64) / ENTRY_H as f64).floor() as usize;
+        (index < self.visible_count()).then_some(index)
     }
 
     /// Closes the launcher locally and tells the compositor to update its
@@ -462,10 +489,10 @@ impl Panel {
         canvas.fill(LAUNCHER_BG);
         canvas.draw_text(PAD * 2, 14, TEXT_SCALE, "APPS", TEXT_COLOR);
         canvas.draw_text(PAD * 2, 44, TEXT_SCALE, &query, TEXT_COLOR);
-        let mut y = 76;
+        let mut y = ENTRY_TOP;
         for name in &names {
             canvas.draw_text(PAD * 2, y, TEXT_SCALE, name, TEXT_COLOR);
-            y += 20;
+            y += ENTRY_H;
         }
 
         surface.damage_buffer(0, 0, width as i32, height as i32);
@@ -554,6 +581,12 @@ impl SeatHandler for Panel {
                 Err(err) => eprintln!("failed to create keyboard: {err}"),
             }
         }
+        if capability == Capability::Pointer && self.pointer.is_none() {
+            match self.seat_state.get_pointer(qh, &seat) {
+                Ok(pointer) => self.pointer = Some(pointer),
+                Err(err) => eprintln!("failed to create pointer: {err}"),
+            }
+        }
     }
 
     fn remove_capability(
@@ -568,9 +601,38 @@ impl SeatHandler for Panel {
                 keyboard.release();
             }
         }
+        if capability == Capability::Pointer {
+            if let Some(pointer) = self.pointer.take() {
+                pointer.release();
+            }
+        }
     }
 
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+}
+
+impl PointerHandler for Panel {
+    fn pointer_frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_pointer::WlPointer,
+        events: &[PointerEvent],
+    ) {
+        for event in events {
+            // Only a left press over an open launcher row does anything: the
+            // row under the pointer is launched (AGENTS 6.8).
+            let PointerEventKind::Press { button, .. } = event.kind else {
+                continue;
+            };
+            if button != BTN_LEFT || !self.launcher_open {
+                continue;
+            }
+            if let Some(index) = self.entry_at(event.position.1) {
+                self.launch_index(index);
+            }
+        }
+    }
 }
 
 impl KeyboardHandler for Panel {
@@ -711,6 +773,7 @@ delegate_shm!(Panel);
 delegate_layer!(Panel);
 delegate_seat!(Panel);
 delegate_keyboard!(Panel);
+delegate_pointer!(Panel);
 delegate_registry!(Panel);
 
 impl ProvidesRegistryState for Panel {
