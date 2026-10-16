@@ -152,11 +152,19 @@ Acceptance criteria
 
 ## M5 — Desktop shell
 
-**Status: planned**
+**Status: in progress**
 
 Deliverables
 - Panel, launcher, quick settings, notification center, workspaces, theming,
   keyboard action system.
+
+Progress
+- [x] Compositor `wlr-layer-shell` support (delegate + layer map).
+- [x] `archlume-shell` client crate: a top-layer panel surface drawn with
+      `wl_shm`, mapped by the compositor and verified with real pixels
+      (`just panel-test`).
+- [ ] Panel widgets, launcher, quick settings, notification center, theming,
+      keyboard action system.
 
 Acceptance criteria
 - [ ] Panel/launcher/quick settings reflect real system state.

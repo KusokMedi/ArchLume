@@ -10,7 +10,7 @@ use smithay::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason, ObjectId},
-            protocol::wl_surface::WlSurface,
+            protocol::{wl_shm, wl_surface::WlSurface},
             Display, DisplayHandle, Resource,
         },
     },
@@ -19,6 +19,7 @@ use smithay::{
         compositor::{CompositorClientState, CompositorState},
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
+        shell::wlr_layer::WlrLayerShellState,
         shell::xdg::XdgShellState,
         shm::ShmState,
         socket::ListeningSocketSource,
@@ -63,6 +64,8 @@ pub struct ArchLume {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<ArchLume>,
     pub data_device_state: DataDeviceState,
+    /// wlr-layer-shell: hosts the panel, notifications and other shell surfaces.
+    pub layer_shell_state: WlrLayerShellState,
     pub popups: PopupManager,
 
     pub seat: Seat<Self>,
@@ -76,10 +79,14 @@ impl ArchLume {
 
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
-        let shm_state = ShmState::new::<Self>(&dh, vec![]);
+        let shm_state = ShmState::new::<Self>(
+            &dh,
+            vec![wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888],
+        );
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
         let popups = PopupManager::default();
 
         // A seat groups keyboards, pointers and touch devices. A seat typically
@@ -121,6 +128,7 @@ impl ArchLume {
             output_manager_state,
             seat_state,
             data_device_state,
+            layer_shell_state,
             popups,
             seat,
         }

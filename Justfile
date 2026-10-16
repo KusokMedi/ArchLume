@@ -49,6 +49,10 @@ control-test:
 preview-test:
 	bash scripts/snap-preview-test.sh
 
+# Verify the archlume-shell panel maps a layer surface and draws real pixels
+panel-test:
+	bash scripts/panel-test.sh
+
 # Boot the newest ISO in QEMU (UEFI) and verify the live environment via OCR
 boot-test:
 	bash scripts/boot-iso-qemu.sh

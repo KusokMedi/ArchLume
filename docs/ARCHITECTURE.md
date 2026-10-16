@@ -95,15 +95,20 @@ floating by default; drag-to-top maximizes; drag-to-left/right snaps to half;
 10 fixed shared workspaces; `Super+1..9`, `Super+0`; `Shift+Super+digit` moves
 and follows; `Super` alone is a no-op.
 
-## 5. Desktop shell (planned)
+## 5. Desktop shell
 
-Panel (top only by default) with optional dock; launcher; quick settings;
-notification center/history; lock and login surfaces; OSD. Implementation stack
-for shell surfaces is **open** — candidates are a Rust/GTK4 shell process or a
-custom Smithay client. This decision will be recorded before Milestone 5.
+The shell is a **separate Wayland client** (`archlume-shell`, crate `shell/`)
+that places its surfaces with `wlr-layer-shell` through `smithay-client-toolkit`
+(see ADR-0008). This keeps UI iteration and crashes isolated from the compositor.
 
-Only the top panel is enabled by default. Disabling the dock must not reserve
-screen area.
+- **Panel** (top only by default) is a `Layer::Top` surface with an exclusive
+  zone. The first slice draws a 28 px bar across the output with `wl_shm`,
+  verified by `scripts/panel-test.sh` (`just panel-test`).
+- A future **dock** is a separate surface and reserves no screen area when
+  disabled.
+- Still to build: panel widgets, launcher, quick settings, notification
+  center/history, lock and login surfaces, OSD, and interactivity (seat,
+  keyboard/pointer) for the shell surfaces.
 
 ## 6. Design system (planned)
 

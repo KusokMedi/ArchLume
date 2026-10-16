@@ -23,6 +23,7 @@
 //! | `stats`        | `ok frames <n> mean <us> max <us>` |
 //! | `preview <zone>` | `ok <x> <y> <w> <h>` or `ok off` |
 //! | `gesture <fingers> <dx> <dy>` | `ok prev|next <n>` or `ok none` |
+//! | `layers`       | `ok <count>` (mapped layer surfaces) |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
@@ -34,7 +35,9 @@ use std::{
     sync::mpsc::Sender as ReplySender,
 };
 
-use smithay::reexports::calloop::channel::Sender as ControlSender;
+use smithay::{
+    desktop::layer_map_for_output, reexports::calloop::channel::Sender as ControlSender,
+};
 
 use crate::{
     gestures::{self, GestureAction},
@@ -78,6 +81,7 @@ pub enum Command {
         dy: f64,
         reply: Reply,
     },
+    LayerCount(Reply),
 }
 
 /// Running control server. Keeps the socket path; the accept thread is
@@ -163,6 +167,7 @@ enum Request {
     Stats,
     Preview(Option<SnapZone>),
     Gesture(u8, f64, f64),
+    Layers,
 }
 
 fn parse_request(line: &str) -> Option<Request> {
@@ -174,6 +179,7 @@ fn parse_request(line: &str) -> Option<Request> {
         "ping" => Some(Request::Ping),
         "workspace" => Some(Request::CurrentWorkspace),
         "windows" => Some(Request::ListWindows),
+        "layers" => Some(Request::Layers),
         "switch" => Some(Request::Switch(number(&mut parts)?)),
         "move" => Some(Request::Move(number(&mut parts)?)),
         "window" => Some(Request::Window(number(&mut parts)?)),
@@ -222,6 +228,7 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
             dy,
             reply,
         },
+        Request::Layers => Command::LayerCount(reply),
     })
 }
 
@@ -323,6 +330,14 @@ pub fn handle(command: Command, state: &mut ArchLume) {
                 }
             }
         }
+        Command::LayerCount(reply) => {
+            let count: usize = state
+                .space
+                .outputs()
+                .map(|output| layer_map_for_output(output).layers().count())
+                .sum();
+            let _ = reply.send(format!("ok {count}"));
+        }
     }
 }
 
@@ -347,6 +362,7 @@ mod tests {
         assert_eq!(parse_request("ping"), Some(Ping));
         assert_eq!(parse_request("workspace"), Some(CurrentWorkspace));
         assert_eq!(parse_request("windows"), Some(ListWindows));
+        assert_eq!(parse_request("layers"), Some(Layers));
         assert_eq!(parse_request("stats"), Some(Stats));
         // Surrounding whitespace is ignored.
         assert_eq!(parse_request("  ping  "), Some(Ping));

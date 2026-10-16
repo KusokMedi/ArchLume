@@ -74,6 +74,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "archlume-shell"
+version = "0.0.0"
+dependencies = [
+ "smithay-client-toolkit",
+ "wayland-client",
+]
+
+[[package]]
 name = "as-raw-xcb-connection"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

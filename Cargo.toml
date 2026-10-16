@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["compositor"]
+members = ["compositor", "shell"]
 
 [workspace.package]
 edition = "2021"
@@ -14,3 +14,5 @@ smithay = { version = "0.7.0", default-features = false, features = [
     "wayland_frontend",
     "desktop",
 ] }
+smithay-client-toolkit = { version = "0.19.2", default-features = false }
+wayland-client = "0.31.15"

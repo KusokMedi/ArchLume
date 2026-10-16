@@ -145,3 +145,33 @@ verified by `scripts/control-test.sh` (`just control-test`). Because it can
 mutate state, access should later be restricted (e.g. socket permissions,
 per-user runtime dir). Cross-process state dumps are limited to what the
 protocol exposes; expand deliberately.
+
+---
+
+## ADR-0008 — Shell surfaces are a separate Wayland client using wlr-layer-shell
+
+- **Date:** 2026-10-16
+- **Status:** accepted
+
+**Context.** Milestone 5 needs shell surfaces (panel first). Options were: draw
+shell surfaces inside the compositor process itself, or run the shell as a
+separate Wayland client. Hardcoding the shell into the compositor would couple
+UI churn to compositor stability, complicate crash isolation, and diverge from
+how the brief treats the shell as its own component.
+
+**Decision.** The desktop shell is a **separate Wayland client** that places its
+surfaces with `wlr-layer-shell` (via `smithay-client-toolkit`, the same library
+family the compositor's Smithay stack uses). The compositor implements the
+layer-shell server side and renders layer surfaces through the normal
+`Space`/`LayerMap` path. Panels are `Layer::Top` surfaces with an exclusive
+zone; a future dock is a separate surface and reserves no area when disabled.
+The first slice is the `archlume-shell` crate: a top bar (28 px) drawn with
+`wl_shm` over the full output width.
+
+**Consequences.** Shell UI can iterate (and crash) independently of the
+compositor; layer-shell is the standard mechanism and keeps the door open for
+third-party panels. The compositor must advertise `wl_shm` formats so clients
+can attach software buffers. Verified end to end by `scripts/panel-test.sh`
+(`just panel-test`): the layer surface is mapped (`layers` control command) and
+pixel-checked with grim + ImageMagick. Text rendering and interactivity (seat,
+keyboard/pointer) come next.

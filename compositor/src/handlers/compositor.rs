@@ -45,6 +45,43 @@ impl CompositorHandler for ArchLume {
 
         xdg_shell::handle_commit(&mut self.popups, &self.space, surface);
         resize_grab::handle_commit(&mut self.space, surface);
+        handle_layer_commit(self, surface);
+    }
+}
+
+/// After a layer surface commits, re-arrange its output's layer map and, on the
+/// first commit, send the initial configure (the protocol requires it to follow
+/// the client's first commit so the client can request a size first).
+fn handle_layer_commit(state: &mut ArchLume, surface: &WlSurface) {
+    use smithay::wayland::compositor::with_states;
+    use smithay::{
+        desktop::{layer_map_for_output, WindowSurfaceType},
+        wayland::shell::wlr_layer::LayerSurfaceData,
+    };
+
+    let Some(output) = state.space.outputs().find(|output| {
+        layer_map_for_output(output)
+            .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+            .is_some()
+    }) else {
+        return;
+    };
+    let output = output.clone();
+
+    let initial_configure_sent = with_states(surface, |states| {
+        states
+            .data_map
+            .get::<LayerSurfaceData>()
+            .map(|data| data.lock().unwrap().initial_configure_sent)
+            .unwrap_or(true)
+    });
+
+    let mut map = layer_map_for_output(&output);
+    map.arrange();
+    if !initial_configure_sent {
+        if let Some(layer) = map.layer_for_surface(surface, WindowSurfaceType::TOPLEVEL) {
+            layer.layer_surface().send_configure();
+        }
     }
 }
 

@@ -79,16 +79,26 @@ just run-nested     # cargo run -p archlume-compositor
 just smoke          # nested smoke test: a client maps a window and exits
 just control-test   # drive workspace state over the control socket
 just preview-test   # verify the snap-preview overlay with real pixels
+just panel-test     # run archlume-shell against it and verify the panel pixels
 ```
 
 The compositor exposes a line-based control socket at
 `$XDG_RUNTIME_DIR/archlume-control.sock` (path also in `$ARCHLUME_CONTROL`); see
 `compositor/src/control.rs` and ADR-0007. Commands: `ping`, `workspace`,
 `switch <n>`, `move <n>`, `windows`, `window <i>`, `close <i>`, `stats`,
-`preview <zone|off>`, `gesture <fingers> <dx> <dy>`.
+`preview <zone|off>`, `gesture <fingers> <dx> <dy>`, `layers`.
 `just control-test` uses it to verify workspace switching, window counting,
 focus-on-open, moving a window, cascade placement, close and frame stats at
 runtime without needing to inject input events.
+
+The desktop shell is the separate `archlume-shell` crate. It connects to a
+running compositor and places a top panel with `wlr-layer-shell`; run it against
+the nested compositor with:
+
+```sh
+cargo build -p archlume-compositor -p archlume-shell
+just panel-test   # starts both, then verifies the bar with grim + ImageMagick
+```
 
 (Native DRM/libseat operation is a Milestone 4 deliverable and is only tested on
 dedicated hardware or in a VM, never on the development host's session. See
