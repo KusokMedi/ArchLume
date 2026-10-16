@@ -128,8 +128,18 @@ cleared on drop or when the grab ends. The zone mapping is unit-tested and the
 overlay is pixel-verified through the control socket; the pointer-drag trigger
 itself has not yet been exercised by injected input.
 
-Still to come: native DRM/libseat startup (plan in `docs/NATIVE-BACKEND.md`) and
-gestures.
+**Gestures** (AGENTS section 6.6) are partly in place: `compositor/src/gestures.rs`
+turns a normalized swipe delta into a direction (with a sensitivity threshold)
+and maps (finger count, direction) to an action. Three-finger horizontal swipes
+switch workspaces and run through the same code path as key bindings. The
+mapping is unit-tested and driven over the control socket
+(`gesture <fingers> <dx> <dy>`) in `just control-test`. Actual libinput gesture
+events are only delivered by the native backend (winit does not emit them), so
+the end-to-end touchpad trigger is not yet exercised; four-finger gestures are
+reserved for overview/app-menu once those exist.
+
+Still to come: native DRM/libseat startup (plan in `docs/NATIVE-BACKEND.md`),
+and the overview/app-menu gestures.
 
 Deliverables
 - Smithay-based compositor: session startup, outputs, input, surfaces, basic

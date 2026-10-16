@@ -15,6 +15,7 @@
 #![allow(irrefutable_let_patterns)]
 
 mod control;
+mod gestures;
 mod grabs;
 mod handlers;
 mod input;

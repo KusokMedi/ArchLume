@@ -22,6 +22,7 @@
 //! | `close <i>`    | `ok` or `err no such window`      |
 //! | `stats`        | `ok frames <n> mean <us> max <us>` |
 //! | `preview <zone>` | `ok <x> <y> <w> <h>` or `ok off` |
+//! | `gesture <fingers> <dx> <dy>` | `ok prev|next <n>` or `ok none` |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
@@ -35,7 +36,11 @@ use std::{
 
 use smithay::reexports::calloop::channel::Sender as ControlSender;
 
-use crate::{wm::SnapZone, ArchLume};
+use crate::{
+    gestures::{self, GestureAction},
+    wm::SnapZone,
+    ArchLume,
+};
 
 /// Channel used by a worker to send a single response line back to a client.
 pub type Reply = ReplySender<String>;
@@ -65,6 +70,12 @@ pub enum Command {
     FrameStats(Reply),
     SnapPreview {
         zone: Option<SnapZone>,
+        reply: Reply,
+    },
+    Gesture {
+        fingers: u8,
+        dx: f64,
+        dy: f64,
         reply: Reply,
     },
 }
@@ -140,7 +151,7 @@ fn handle_connection(stream: UnixStream, tx: ControlSender<Command>) {
 
 /// A parsed request, before it is paired with a reply channel. Kept separate
 /// from [`Command`] so parsing is pure and unit-testable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Request {
     Ping,
     CurrentWorkspace,
@@ -151,6 +162,7 @@ enum Request {
     Close(usize),
     Stats,
     Preview(Option<SnapZone>),
+    Gesture(u8, f64, f64),
 }
 
 fn parse_request(line: &str) -> Option<Request> {
@@ -168,6 +180,11 @@ fn parse_request(line: &str) -> Option<Request> {
         "close" => Some(Request::Close(number(&mut parts)?)),
         "stats" => Some(Request::Stats),
         "preview" => Some(Request::Preview(parse_zone(parts.next().unwrap_or("off"))?)),
+        "gesture" => Some(Request::Gesture(
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+            parts.next()?.parse().ok()?,
+        )),
         _ => None,
     }
 }
@@ -199,6 +216,12 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
         Request::Close(index) => Command::CloseWindow { index, reply },
         Request::Stats => Command::FrameStats(reply),
         Request::Preview(zone) => Command::SnapPreview { zone, reply },
+        Request::Gesture(fingers, dx, dy) => Command::Gesture {
+            fingers,
+            dx,
+            dy,
+            reply,
+        },
     })
 }
 
@@ -277,6 +300,29 @@ pub fn handle(command: Command, state: &mut ArchLume) {
                 let _ = reply.send("ok off".to_string());
             }
         },
+        Command::Gesture {
+            fingers,
+            dx,
+            dy,
+            reply,
+        } => {
+            let action = gestures::direction_for(dx, dy, gestures::DEFAULT_THRESHOLD)
+                .map(|direction| gestures::action_for(fingers, direction))
+                .unwrap_or(GestureAction::None);
+            match action {
+                GestureAction::PrevWorkspace => {
+                    state.switch_workspace_by(-1);
+                    let _ = reply.send(format!("ok prev {}", workspace_number(state)));
+                }
+                GestureAction::NextWorkspace => {
+                    state.switch_workspace_by(1);
+                    let _ = reply.send(format!("ok next {}", workspace_number(state)));
+                }
+                GestureAction::None => {
+                    let _ = reply.send("ok none".to_string());
+                }
+            }
+        }
     }
 }
 
@@ -334,6 +380,18 @@ mod tests {
         // A bare `preview` clears the overlay.
         assert_eq!(parse_request("preview"), Some(Preview(None)));
         assert_eq!(parse_request("preview bogus"), None);
+    }
+
+    #[test]
+    fn parses_gestures() {
+        assert_eq!(
+            parse_request("gesture 3 -0.5 0"),
+            Some(Gesture(3, -0.5, 0.0))
+        );
+        assert_eq!(parse_request("gesture 4 0 0.4"), Some(Gesture(4, 0.0, 0.4)));
+        assert_eq!(parse_request("gesture 3 -0.5"), None);
+        assert_eq!(parse_request("gesture x 0 0"), None);
+        assert_eq!(parse_request("gesture 3 a b"), None);
     }
 
     #[test]

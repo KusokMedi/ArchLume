@@ -171,4 +171,14 @@ frames="$(printf '%s' "$stats" | sed -E 's/^ok frames ([0-9]+).*/\1/')"
 [ "$frames" -gt 0 ] || fail "stats reported no frames: '$stats'"
 echo "ok: stats -> $stats"
 
-echo "PASS: control socket works; workspace, count, focus-on-open, move, cascade, close and frame stats verified"
+# Phase 6: gestures reuse the workspace action system. Arguments are the normalized
+# swipe delta; the direction and threshold logic lives in compositor/src/gestures.rs.
+check "switch 5" "ok 5 changed"
+check "gesture 3 -0.5 0" "ok prev 4"
+check "gesture 3 0.5 0" "ok next 5"
+check "gesture 3 0.5 0" "ok next 6"
+check "gesture 3 0 0.5" "ok none"
+check "gesture 3 0.02 0.01" "ok none"
+check "gesture 4 0 -0.4" "ok none"
+
+echo "PASS: control socket works; workspace, count, focus-on-open, move, cascade, close, frame stats and gestures verified"

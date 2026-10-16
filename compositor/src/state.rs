@@ -252,6 +252,18 @@ impl ArchLume {
         }
     }
 
+    /// Switch workspace by a relative delta (used by gestures and future
+    /// bindings). Wraps around. Returns whether the active workspace changed.
+    pub fn switch_workspace_by(&mut self, delta: i32) -> bool {
+        if self.workspaces.switch_by(delta) {
+            self.apply_workspace_offset();
+            self.refocus_active_workspace();
+            true
+        } else {
+            false
+        }
+    }
+
     /// Move keyboard focus to the topmost window on the active workspace, or
     /// clear it when the workspace is empty. Without this, focus would stay on
     /// a window that just left the screen.
