@@ -37,6 +37,9 @@ impl PointerGrab<ArchLume> for MoveSurfaceGrab {
         let new_location = self.initial_window_location.to_f64() + delta;
         data.space
             .map_element(self.window.clone(), new_location.to_i32_round(), true);
+
+        // Show the snap preview for the zone the pointer is currently over.
+        data.set_snap_preview(data.snap_zone_at((event.location.x, event.location.y)));
     }
 
     fn relative_motion(
@@ -89,6 +92,8 @@ impl PointerGrab<ArchLume> for MoveSurfaceGrab {
                     }
                 }
             }
+            // The preview only reflects an in-progress drag.
+            data.set_snap_preview(None);
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
@@ -182,5 +187,8 @@ impl PointerGrab<ArchLume> for MoveSurfaceGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut ArchLume) {}
+    fn unset(&mut self, data: &mut ArchLume) {
+        // Never leave a preview behind if the grab ends outside the button path.
+        data.set_snap_preview(None);
+    }
 }

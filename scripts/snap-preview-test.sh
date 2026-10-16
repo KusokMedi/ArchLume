@@ -82,8 +82,10 @@ read -r _ px py pw ph <<< "$resp"
 [ "$pw" -eq "$((WW / 2))" ] || fail "preview width ${pw:-?} != window half $((WW / 2))"
 [ "$ph" -eq "$WH" ] || fail "preview height ${ph:-?} != window height $WH"
 
-# Clear -> capture, show left -> capture, clear -> capture.
+# Clear -> capture, show left -> capture, clear -> capture. Each change is
+# followed by a short pause so the compositor has redrawn before grim captures.
 ctl 'preview off' >/dev/null
+sleep 0.3
 grim -g "$REG" "$OUT/off.png" || fail "grim (off) failed"
 ctl 'preview left' >/dev/null
 sleep 0.3

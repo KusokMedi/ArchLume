@@ -122,8 +122,11 @@ winit backend draws it as a translucent solid element. `just preview-test`
 left-half preview over the control socket, and verifies with real pixels that the
 left half brightens while the right half and a cleared frame are unchanged
 (measured: left mean 0.098 -> 0.293, right delta 0.000, 0 pixels differ after
-clearing). The overlay is currently driven through the control socket so it can
-be verified without input injection; wiring it to the live drag grab is next.
+clearing). The overlay is wired to the live move grab (`move_grab.rs`):
+`snap_zone_at` maps the pointer to a zone during motion, and the preview is
+cleared on drop or when the grab ends. The zone mapping is unit-tested and the
+overlay is pixel-verified through the control socket; the pointer-drag trigger
+itself has not yet been exercised by injected input.
 
 Still to come: native DRM/libseat startup (plan in `docs/NATIVE-BACKEND.md`) and
 gestures.

@@ -336,6 +336,20 @@ impl ArchLume {
         }
     }
 
+    /// The snap zone under a pointer position in space coordinates, if any.
+    pub fn snap_zone_at(&self, pos: (f64, f64)) -> Option<SnapZone> {
+        let point = Point::<f64, Logical>::from(pos);
+        let output = self.space.output_under(point).next()?.clone();
+        let geo = self.space.output_geometry(&output)?;
+        let rect = wm::Rect {
+            x: geo.loc.x as f64,
+            y: geo.loc.y as f64,
+            w: geo.size.w as f64,
+            h: geo.size.h as f64,
+        };
+        wm::zone_for(pos, rect, wm::DEFAULT_BAND_FRACTION)
+    }
+
     /// Set (or clear) the snap preview for `zone`. Returns the preview rectangle
     /// in output-relative coordinates, or `None` when the preview is cleared.
     pub fn set_snap_preview(&mut self, zone: Option<SnapZone>) -> Option<wm::Rect> {
