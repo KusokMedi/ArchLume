@@ -102,7 +102,9 @@ used to run privileged actions.
 The desktop shell is the separate `archlume-shell` crate. It connects to a
 running compositor and places a top panel with `wlr-layer-shell`, drawing a
 brand label, the active workspace and focused-window title (polled from the
-control socket), and a live local clock with a self-contained bitmap font
+control socket), the battery level (read from sysfs; `ARCHLUME_BATTERY_DIR`
+overrides the directory for tests), and a live local clock with a
+self-contained bitmap font
 (`shell/src/font.rs`). When the compositor reports the launcher open it maps a
 centred overlay card; that card requests exclusive keyboard focus, runs a search
 field, and launches the selected `.desktop` entry on Enter (`shell/src/apps.rs`).

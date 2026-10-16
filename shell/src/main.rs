@@ -13,6 +13,7 @@
 //! and `libc`; text uses the self-contained bitmap font in `font.rs`.
 
 mod apps;
+mod battery;
 mod font;
 
 use std::{
@@ -64,6 +65,8 @@ const LABEL: &str = "ARCHLUME";
 const POLL_INTERVAL_MS: libc::c_int = 250;
 /// Minimum interval between control-socket workspace polls (ms).
 const WS_POLL_MS: u128 = 500;
+/// Minimum interval between battery polls (ms).
+const BATTERY_POLL_MS: u128 = 2000;
 /// Gap between the brand label and the workspace indicator.
 const WS_GAP: i32 = 24;
 /// Fixed left edge of the active-window title (keeps panel regions stable).
@@ -121,6 +124,8 @@ fn main() {
         title: None,
         control_path: control_socket_path(),
         last_ws_poll: None,
+        last_battery_poll: None,
+        battery: battery::read().map(|b| b.label()),
         apps: apps::discover(),
         launcher: None,
         launcher_open: false,
@@ -150,6 +155,9 @@ fn main() {
             dirty = true;
         }
         if panel.poll_status() {
+            dirty = true;
+        }
+        if panel.poll_battery() {
             dirty = true;
         }
         dirty |= std::mem::take(&mut panel.redraw);
@@ -246,6 +254,8 @@ struct Panel {
     title: Option<String>,
     control_path: Option<PathBuf>,
     last_ws_poll: Option<Instant>,
+    last_battery_poll: Option<Instant>,
+    battery: Option<String>,
     apps: Vec<apps::AppEntry>,
     launcher: Option<LayerSurface>,
     launcher_open: bool,
@@ -275,6 +285,20 @@ impl Panel {
         self.workspace = workspace;
         self.title = title;
         self.launcher_open = launcher;
+        changed
+    }
+
+    /// Re-reads the battery state if enough time has passed. Returns `true`
+    /// when the value changed (i.e. a repaint is needed).
+    fn poll_battery(&mut self) -> bool {
+        let elapsed = self.last_battery_poll.map(|t| t.elapsed().as_millis());
+        if elapsed.is_some_and(|ms| ms < BATTERY_POLL_MS) {
+            return false;
+        }
+        self.last_battery_poll = Some(Instant::now());
+        let label = battery::read().map(|b| b.label());
+        let changed = label != self.battery;
+        self.battery = label;
         changed
     }
 
@@ -376,13 +400,24 @@ impl Panel {
             canvas.draw_text(ws_x, text_y, TEXT_SCALE, &format!("WS {ws}"), TEXT_COLOR);
         }
         let clock_x = width as i32 - PAD - font::text_width(&self.clock, TEXT_SCALE) as i32;
+        // The battery sits to the left of the clock; the title is clipped so it
+        // never overlaps either widget.
+        let battery = self.battery.as_deref().unwrap_or("");
+        let battery_x = clock_x - PAD - font::text_width(battery, TEXT_SCALE) as i32;
+        let title_end = if self.battery.is_some() {
+            battery_x - WS_GAP
+        } else {
+            clock_x - WS_GAP
+        };
         if let Some(title) = &self.title {
-            let max_chars =
-                ((clock_x - TITLE_X - WS_GAP) / (6 * TEXT_SCALE) as i32).max(0) as usize;
+            let max_chars = ((title_end - TITLE_X) / (6 * TEXT_SCALE) as i32).max(0) as usize;
             if max_chars > 0 {
                 let shown: String = title.chars().take(max_chars).collect();
                 canvas.draw_text(TITLE_X, text_y, TEXT_SCALE, &shown, TEXT_COLOR);
             }
+        }
+        if self.battery.is_some() {
+            canvas.draw_text(battery_x, text_y, TEXT_SCALE, battery, TEXT_COLOR);
         }
         canvas.draw_text(clock_x, text_y, TEXT_SCALE, &self.clock, TEXT_COLOR);
 

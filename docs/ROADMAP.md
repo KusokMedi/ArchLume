@@ -175,8 +175,11 @@ Progress
       search field filters the entry list, Backspace edits it, and Enter launches
       the selected `.desktop` entry; verified by `just panel-test` (keys injected
       through the control socket, never the host session).
-- [ ] Real font stack, more panel widgets, quick settings, notification center,
-      theming, keyboard action system.
+- [x] Panel reflects real system state: a battery indicator reads
+      `/sys/class/power_supply` and updates live (`just panel-test` feeds a fake
+      sysfs dir and checks the value follows).
+- [ ] Real font stack, more panel widgets (network/audio), quick settings,
+      notification center, theming, keyboard action system.
 
 Acceptance criteria
 - [ ] Panel/launcher/quick settings reflect real system state.

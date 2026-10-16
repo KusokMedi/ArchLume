@@ -82,9 +82,14 @@ Name=ArchLume Test
 Exec=$CLIENT -T LAUNCHED sh -c 'sleep 20'
 EOF
 
+# A fake battery sysfs dir so the widget value is deterministic.
+mkdir -p "$RT/battery/BAT0"
+printf '42\n' > "$RT/battery/BAT0/capacity"
+printf 'Discharging\n' > "$RT/battery/BAT0/status"
+
 # Launch the panel against the nested compositor with the isolated app set.
 XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY="$sock_name" \
-  XDG_DATA_DIRS="$RT/xdg" XDG_DATA_HOME="$RT/xdg-home" \
+  XDG_DATA_DIRS="$RT/xdg" XDG_DATA_HOME="$RT/xdg-home" ARCHLUME_BATTERY_DIR="$RT/battery" \
   setsid --fork "$SHELL_BIN" < /dev/null > "$SHELL_LOG" 2>&1
 
 for _ in $(seq 1 40); do
@@ -289,4 +294,27 @@ done
 [ "$(ctl layers)" = "ok 1" ] || fail "launcher overlay did not unmap (layers=$(ctl layers))"
 echo "ok: launcher overlay mapped, rendered an app list, and unmapped"
 
-echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock, a live workspace indicator and the active-window title; the launcher overlay renders installed apps, takes keyboard focus, filters on typing, and launches the selected app on Enter"
+# Battery widget: reads a fake sysfs dir and reflects live value changes.
+# The label sits left of the clock: clock_x = WW-10-96, battery_x = clock_x-10-84.
+bat_region="84x16+$((WW - 200))+7"
+sleep 0.5
+grim -g "$REG" "$OUT/battery_a.png" || fail "grim (battery capture) failed"
+bat_a="$(white_frac "$OUT/battery_a.png" "$bat_region")"
+awk -v f="$bat_a" 'BEGIN { exit !(f > 0.02) }' \
+  || fail "battery widget text missing (frac=$bat_a)"
+magick "$OUT/battery_a.png" -crop "$bat_region" +repage "$OUT/bat_a.png"
+
+printf '87\n' > "$RT/battery/BAT0/capacity"
+sleep 2.6
+grim -g "$REG" "$OUT/battery_b.png" || fail "grim (battery recapture) failed"
+bat_b="$(white_frac "$OUT/battery_b.png" "$bat_region")"
+awk -v f="$bat_b" 'BEGIN { exit !(f > 0.02) }' \
+  || fail "battery widget text missing after change (frac=$bat_b)"
+magick "$OUT/battery_b.png" -crop "$bat_region" +repage "$OUT/bat_b.png"
+bat_diff="$(magick compare -metric AE "$OUT/bat_a.png" "$OUT/bat_b.png" null: 2>&1 || true)"
+bat_diff="$(printf '%s' "$bat_diff" | awk '{print $1}')"
+awk -v d="${bat_diff:-0}" 'BEGIN { exit !(d > 0) }' \
+  || fail "battery widget did not follow the value change (diff=$bat_diff)"
+echo "ok: battery widget reflected capacity change 42% -> 87% (diff=$bat_diff)"
+
+echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock, a live workspace indicator, the active-window title and the battery level; the launcher overlay renders installed apps, takes keyboard focus, filters on typing, and launches the selected app on Enter"
