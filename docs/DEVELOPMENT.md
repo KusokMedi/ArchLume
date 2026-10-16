@@ -86,7 +86,7 @@ The compositor exposes a line-based control socket at
 `$XDG_RUNTIME_DIR/archlume-control.sock` (path also in `$ARCHLUME_CONTROL`); see
 `compositor/src/control.rs` and ADR-0007. Commands: `ping`, `workspace`,
 `switch <n>`, `move <n>`, `windows`, `window <i>`, `close <i>`, `stats`,
-`preview <zone|off>`, `gesture <fingers> <dx> <dy>`, `layers`.
+`preview <zone|off>`, `gesture <fingers> <dx> <dy>`, `layers`, `focused`.
 `just control-test` uses it to verify workspace switching, window counting,
 focus-on-open, moving a window, cascade placement, close and frame stats at
 runtime without needing to inject input events.

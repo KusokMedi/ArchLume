@@ -60,6 +60,8 @@ const POLL_INTERVAL_MS: libc::c_int = 250;
 const WS_POLL_MS: u128 = 500;
 /// Gap between the brand label and the workspace indicator.
 const WS_GAP: i32 = 24;
+/// Fixed left edge of the active-window title (keeps panel regions stable).
+const TITLE_X: i32 = 260;
 
 fn main() {
     let conn = Connection::connect_to_env().expect("connect to Wayland display");
@@ -92,6 +94,7 @@ fn main() {
         height: PANEL_HEIGHT,
         clock: String::new(),
         workspace: None,
+        title: None,
         control_path: control_socket_path(),
         last_ws_poll: None,
     };
@@ -113,7 +116,7 @@ fn main() {
             panel.clock = now;
             dirty = true;
         }
-        if panel.poll_workspace() {
+        if panel.poll_status() {
             dirty = true;
         }
         if dirty {
@@ -153,16 +156,24 @@ fn control_socket_path() -> Option<PathBuf> {
 
 /// Queries the active workspace over the control socket. Returns `None` if the
 /// socket is missing or the request fails.
-fn query_workspace(path: &Path) -> Option<u32> {
+fn query_control(path: &Path, command: &str) -> Option<String> {
     let stream = UnixStream::connect(path).ok()?;
     stream
         .set_read_timeout(Some(std::time::Duration::from_millis(200)))
         .ok()?;
     let mut writer = stream.try_clone().ok()?;
-    writer.write_all(b"workspace\n").ok()?;
+    writer.write_all(command.as_bytes()).ok()?;
+    writer.write_all(b"\n").ok()?;
     let mut line = String::new();
     BufReader::new(stream).read_line(&mut line).ok()?;
-    line.trim().strip_prefix("ok ")?.parse().ok()
+    Some(line.trim().strip_prefix("ok ")?.to_string())
+}
+
+/// Polls the compositor for the active workspace and focused-window title.
+fn query_status(path: &Path) -> (Option<u32>, Option<String>) {
+    let workspace = query_control(path, "workspace").and_then(|s| s.parse().ok());
+    let title = query_control(path, "focused").filter(|s| s != "-" && !s.is_empty());
+    (workspace, title)
 }
 
 /// Local wall-clock time as `HH:MM:SS` via the C library's `localtime_r`.
@@ -190,14 +201,15 @@ struct Panel {
     height: u32,
     clock: String,
     workspace: Option<u32>,
+    title: Option<String>,
     control_path: Option<PathBuf>,
     last_ws_poll: Option<Instant>,
 }
 
 impl Panel {
-    /// Polls the active workspace if enough time has passed. Returns `true` when
-    /// the value changed (i.e. a repaint is needed).
-    fn poll_workspace(&mut self) -> bool {
+    /// Polls the active workspace and focused-window title if enough time has
+    /// passed. Returns `true` when either changed (i.e. a repaint is needed).
+    fn poll_status(&mut self) -> bool {
         let Some(path) = self.control_path.as_deref() else {
             return false;
         };
@@ -206,13 +218,11 @@ impl Panel {
             return false;
         }
         self.last_ws_poll = Some(Instant::now());
-        let current = query_workspace(path);
-        if current != self.workspace {
-            self.workspace = current;
-            true
-        } else {
-            false
-        }
+        let (workspace, title) = query_status(path);
+        let changed = workspace != self.workspace || title != self.title;
+        self.workspace = workspace;
+        self.title = title;
+        changed
     }
 
     fn draw(&mut self, qh: &QueueHandle<Self>) {
@@ -242,6 +252,14 @@ impl Panel {
             canvas.draw_text(ws_x, text_y, TEXT_SCALE, &format!("WS {ws}"), TEXT_COLOR);
         }
         let clock_x = width as i32 - PAD - font::text_width(&self.clock, TEXT_SCALE) as i32;
+        if let Some(title) = &self.title {
+            let max_chars =
+                ((clock_x - TITLE_X - WS_GAP) / (6 * TEXT_SCALE) as i32).max(0) as usize;
+            if max_chars > 0 {
+                let shown: String = title.chars().take(max_chars).collect();
+                canvas.draw_text(TITLE_X, text_y, TEXT_SCALE, &shown, TEXT_COLOR);
+            }
+        }
         canvas.draw_text(clock_x, text_y, TEXT_SCALE, &self.clock, TEXT_COLOR);
 
         let surface = self.layer.wl_surface();

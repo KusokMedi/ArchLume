@@ -24,6 +24,7 @@
 //! | `preview <zone>` | `ok <x> <y> <w> <h>` or `ok off` |
 //! | `gesture <fingers> <dx> <dy>` | `ok prev|next <n>` or `ok none` |
 //! | `layers`       | `ok <count>` (mapped layer surfaces) |
+//! | `focused`      | `ok <title>` or `ok -` (focused window title) |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
@@ -82,6 +83,7 @@ pub enum Command {
         reply: Reply,
     },
     LayerCount(Reply),
+    FocusedTitle(Reply),
 }
 
 /// Running control server. Keeps the socket path; the accept thread is
@@ -168,6 +170,7 @@ enum Request {
     Preview(Option<SnapZone>),
     Gesture(u8, f64, f64),
     Layers,
+    Focused,
 }
 
 fn parse_request(line: &str) -> Option<Request> {
@@ -180,6 +183,7 @@ fn parse_request(line: &str) -> Option<Request> {
         "workspace" => Some(Request::CurrentWorkspace),
         "windows" => Some(Request::ListWindows),
         "layers" => Some(Request::Layers),
+        "focused" => Some(Request::Focused),
         "switch" => Some(Request::Switch(number(&mut parts)?)),
         "move" => Some(Request::Move(number(&mut parts)?)),
         "window" => Some(Request::Window(number(&mut parts)?)),
@@ -229,6 +233,7 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
             reply,
         },
         Request::Layers => Command::LayerCount(reply),
+        Request::Focused => Command::FocusedTitle(reply),
     })
 }
 
@@ -338,6 +343,14 @@ pub fn handle(command: Command, state: &mut ArchLume) {
                 .sum();
             let _ = reply.send(format!("ok {count}"));
         }
+        Command::FocusedTitle(reply) => {
+            let title = state
+                .focused_window_title()
+                .map(|t| t.replace(['\n', '\r'], " "))
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| "-".to_string());
+            let _ = reply.send(format!("ok {title}"));
+        }
     }
 }
 
@@ -363,6 +376,7 @@ mod tests {
         assert_eq!(parse_request("workspace"), Some(CurrentWorkspace));
         assert_eq!(parse_request("windows"), Some(ListWindows));
         assert_eq!(parse_request("layers"), Some(Layers));
+        assert_eq!(parse_request("focused"), Some(Focused));
         assert_eq!(parse_request("stats"), Some(Stats));
         // Surrounding whitespace is ignored.
         assert_eq!(parse_request("  ping  "), Some(Ping));

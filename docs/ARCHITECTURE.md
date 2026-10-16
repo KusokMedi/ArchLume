@@ -105,9 +105,9 @@ that places its surfaces with `wlr-layer-shell` through `smithay-client-toolkit`
   zone. It draws a 28 px bar across the output with `wl_shm`, showing a brand
   label, the active workspace, and a live local clock; verified by
   `scripts/panel-test.sh` (`just panel-test`).
-- The active-workspace indicator polls the compositor control socket
-  (`$ARCHLUME_CONTROL`, ADR-0007); the indicator is omitted when it is
-  unavailable. A push-based event stream may replace polling later.
+- The active-workspace indicator and the active-window title poll the
+  compositor control socket (`$ARCHLUME_CONTROL`, ADR-0007); both are omitted
+  when it is unavailable. A push-based event stream may replace polling later.
 - **Text** currently uses a small self-contained 5x7 bitmap font
   (`shell/src/font.rs`) so there is no external font asset or third-party font
   licence while the project licence is undecided. A proper vector-font stack

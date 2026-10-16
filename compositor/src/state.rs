@@ -16,11 +16,11 @@ use smithay::{
     },
     utils::{Logical, Point, Size, SERIAL_COUNTER},
     wayland::{
-        compositor::{CompositorClientState, CompositorState},
+        compositor::{with_states, CompositorClientState, CompositorState},
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
         shell::wlr_layer::WlrLayerShellState,
-        shell::xdg::XdgShellState,
+        shell::xdg::{XdgShellState, XdgToplevelSurfaceData},
         shm::ShmState,
         socket::ListeningSocketSource,
     },
@@ -337,6 +337,18 @@ impl ArchLume {
                 toplevel.send_pending_configure();
             }
         }
+    }
+
+    /// Title of the keyboard-focused toplevel, if any. Used by the shell's panel
+    /// to show the active window.
+    pub fn focused_window_title(&self) -> Option<String> {
+        let surface = self.seat.get_keyboard()?.current_focus()?;
+        with_states(&surface, |states| {
+            states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .and_then(|data| data.lock().unwrap().title.clone())
+        })
     }
 
     /// Logical geometry of the primary output in global coordinates.

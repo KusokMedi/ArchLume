@@ -13,6 +13,7 @@ set -u
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="${ARCHLUME_COMPOSITOR:-$ROOT/target/debug/archlume-compositor}"
 SHELL_BIN="${ARCHLUME_SHELL:-$ROOT/target/debug/archlume-shell}"
+CLIENT="${ARCHLUME_PANEL_CLIENT:-foot}"
 PAT='archlume-composito[r]'
 SHELL_PAT='archlume-shel[l]'
 
@@ -45,6 +46,7 @@ command -v socat >/dev/null 2>&1 || fail "socat is required"
 command -v grim >/dev/null 2>&1 || fail "grim is required"
 command -v magick >/dev/null 2>&1 || fail "ImageMagick (magick) is required"
 command -v hyprctl >/dev/null 2>&1 || fail "hyprctl (Hyprland host) is required"
+command -v "$CLIENT" >/dev/null 2>&1 || fail "panel test client '$CLIENT' not found"
 
 mkdir -p "$OUT"
 pkill -f "$PAT" 2>/dev/null || true
@@ -174,4 +176,26 @@ awk -v d="${ws_diff:-0}" 'BEGIN { exit !(d > 0) }' \
   || fail "workspace indicator did not update after switch (diff=$ws_diff)"
 echo "ok: workspace indicator updated to 4 (diff=$ws_diff)"
 
-echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock and a live workspace indicator"
+# Active-window title: TITLE_X(260) .. clock, fixed 200px probe region.
+title_region="200x16+260+7"
+title_empty="$(white_frac "$OUT/panel.png" "$title_region")"
+awk -v f="$title_empty" 'BEGIN { exit !(f < 0.01) }' \
+  || fail "title region should be empty with no client (frac=$title_empty)"
+
+setsid --fork env XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY="$sock_name" \
+  "$CLIENT" -T ZZZ sh -c 'sleep 20' < /dev/null > "$OUT/client.log" 2>&1
+for _ in $(seq 1 40); do
+  [ "$(ctl windows)" = "ok 1" ] && break
+  sleep 0.25
+done
+[ "$(ctl windows)" = "ok 1" ] || fail "panel test client did not map a window"
+sleep 1
+focused="$(ctl focused)"
+[ "$focused" = "ok ZZZ" ] || fail "compositor focused-title mismatch: '$focused'"
+grim -g "$REG" "$OUT/panel_title.png" || fail "grim (title capture) failed"
+title_w="$(white_frac "$OUT/panel_title.png" "$title_region")"
+awk -v f="$title_w" 'BEGIN { exit !(f > 0.02) }' \
+  || fail "panel did not render the window title (frac=$title_w)"
+echo "ok: panel shows focused title '$focused' (text frac=$title_w)"
+
+echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock, a live workspace indicator and the active-window title"

@@ -165,8 +165,9 @@ Progress
       (`just panel-test`).
 - [x] Panel content: a live local clock (self-contained bitmap font) that
       redraws each second while the brand label stays fixed (`just panel-test`).
-- [x] Panel reflects real compositor state: an active-workspace indicator polled
-      from the control socket, updating on `switch`.
+- [x] Panel reflects real compositor state: an active-workspace indicator and
+      the focused-window title, both polled from the control socket; verified by
+      `just panel-test` (switch workspace and launch a titled client).
 - [ ] Real font stack, more panel widgets, launcher, quick settings,
       notification center, theming, keyboard action system, interactivity.
 
