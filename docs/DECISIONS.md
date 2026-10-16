@@ -175,3 +175,29 @@ can attach software buffers. Verified end to end by `scripts/panel-test.sh`
 (`just panel-test`): the layer surface is mapped (`layers` control command) and
 pixel-checked with grim + ImageMagick. Text rendering and interactivity (seat,
 keyboard/pointer) come next.
+
+---
+
+## ADR-0009 — The compositor owns launcher state; the shell renders it
+
+- **Date:** 2026-10-16
+- **Status:** accepted
+
+**Context.** Toggling the application launcher must be reachable from a
+keyboard shortcut and (later) a panel button, and the visible result is a shell
+surface. Two components could own the "is the launcher open?" state: the
+compositor (which reads the keybinding) or the shell (which draws it).
+
+**Decision.** The **compositor owns** the launcher open/closed state
+(`ArchLume::launcher_open`), toggled by `Super + d` through the existing action
+map. It is exposed over the control socket (`launcher`, `launcher on|off|toggle`).
+The shell polls it (like workspace and title) and creates or destroys its
+`Layer::Overlay` launcher surface to match. Application discovery lives in the
+shell (`shell/src/apps.rs`), which reads XDG `.desktop` entries.
+
+**Consequences.** One source of truth for launcher state; the keybinding and any
+future panel button/gesture cannot disagree. The shell stays a renderer of
+compositor state, matching ADR-0007/ADR-0008. Weakness: the shell polls the
+state rather than receiving a push event, so there is up to one poll interval
+(500 ms) of latency; a proper event stream can replace this later. Interactivity
+(search, selection, launch) is not implemented yet.

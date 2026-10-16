@@ -168,8 +168,12 @@ Progress
 - [x] Panel reflects real compositor state: an active-workspace indicator and
       the focused-window title, both polled from the control socket; verified by
       `just panel-test` (switch workspace and launch a titled client).
-- [ ] Real font stack, more panel widgets, launcher, quick settings,
-      notification center, theming, keyboard action system, interactivity.
+- [x] Application launcher overlay: compositor-owned open/closed state
+      (`Super + d`, or the `launcher` control command) rendered by the shell as
+      a centred card listing installed `.desktop` applications.
+- [ ] Launcher interactivity (search, selection, launch), real font stack, more
+      panel widgets, quick settings, notification center, theming, keyboard
+      action system.
 
 Acceptance criteria
 - [ ] Panel/launcher/quick settings reflect real system state.

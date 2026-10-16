@@ -198,4 +198,39 @@ awk -v f="$title_w" 'BEGIN { exit !(f > 0.02) }' \
   || fail "panel did not render the window title (frac=$title_w)"
 echo "ok: panel shows focused title '$focused' (text frac=$title_w)"
 
-echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock, a live workspace indicator and the active-window title"
+# Launcher overlay: toggled by the compositor, rendered as a centred navy card.
+[ "$(ctl launcher)" = "ok off" ] || fail "launcher should start off ($(ctl launcher))"
+[ "$(ctl launcher on)" = "ok on" ] || fail "launcher on did not take effect"
+for _ in $(seq 1 40); do
+  [ "$(ctl layers)" = "ok 2" ] && break
+  sleep 0.25
+done
+[ "$(ctl layers)" = "ok 2" ] || fail "launcher overlay did not map (layers=$(ctl layers))"
+sleep 0.6
+grim -g "$REG" "$OUT/panel_launcher.png" || fail "grim (launcher capture) failed"
+
+# Overlay is 600x400 centred on a 664x720 output -> x 32..632, y 160..560.
+bg_region="160x100+440+240"
+bg_b="$(magick "$OUT/panel_launcher.png" -crop "$bg_region" +repage -colorspace sRGB -format '%[fx:mean.b]' info:)"
+bg_r="$(magick "$OUT/panel_launcher.png" -crop "$bg_region" +repage -colorspace sRGB -format '%[fx:mean.r]' info:)"
+app_frac="$(white_frac "$OUT/panel_launcher.png" '200x120+52+206')"
+python3 - "$bg_b" "$bg_r" "$app_frac" <<'PY' || exit 1
+import sys
+b, r, f = (float(a) for a in sys.argv[1:])
+print(f"launcher bg mean r/b = {r:.3f}/{b:.3f} (expected ~0.063/0.180), app-list text frac = {f:.4f}")
+ok = b > 0.15 and r < 0.12 and f > 0.01
+print("RESULT:", "PASS" if ok else "FAIL")
+sys.exit(0 if ok else 1)
+PY
+rc=$?
+[ "$rc" -eq 0 ] || fail "launcher overlay pixels not verified"
+
+[ "$(ctl launcher off)" = "ok off" ] || fail "launcher off did not take effect"
+for _ in $(seq 1 40); do
+  [ "$(ctl layers)" = "ok 1" ] && break
+  sleep 0.25
+done
+[ "$(ctl layers)" = "ok 1" ] || fail "launcher overlay did not unmap (layers=$(ctl layers))"
+echo "ok: launcher overlay mapped, rendered an app list, and unmapped"
+
+echo "PASS: archlume-shell panel maps a layer surface, shows a ticking clock, a live workspace indicator and the active-window title; launcher overlay renders installed apps"

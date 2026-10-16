@@ -56,6 +56,10 @@ pub struct ArchLume {
     pub snap_preview: Option<wm::Rect>,
     /// Backing buffer for the snap preview overlay.
     pub snap_preview_buffer: SolidColorBuffer,
+    /// Whether the application launcher is open. The shell observes this over
+    /// the control socket (`launcher`); the compositor owns the state so the
+    /// keybinding and the panel share one source of truth.
+    pub launcher_open: bool,
 
     // Smithay state
     pub compositor_state: CompositorState,
@@ -120,6 +124,7 @@ impl ArchLume {
             frame_stats: FrameStats::new(),
             snap_preview: None,
             snap_preview_buffer: SolidColorBuffer::new((1, 1), PREVIEW_COLOR),
+            launcher_open: false,
             socket_name,
 
             compositor_state,
@@ -349,6 +354,18 @@ impl ArchLume {
                 .get::<XdgToplevelSurfaceData>()
                 .and_then(|data| data.lock().unwrap().title.clone())
         })
+    }
+
+    /// Toggle the application launcher. Returns the new state.
+    pub fn toggle_launcher(&mut self) -> bool {
+        self.launcher_open = !self.launcher_open;
+        self.launcher_open
+    }
+
+    /// Set the application launcher state. Returns the new state.
+    pub fn set_launcher(&mut self, open: bool) -> bool {
+        self.launcher_open = open;
+        self.launcher_open
     }
 
     /// Logical geometry of the primary output in global coordinates.

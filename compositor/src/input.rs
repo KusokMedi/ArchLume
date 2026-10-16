@@ -44,6 +44,9 @@ impl ArchLume {
                                 Action::MoveTo(index) => {
                                     state.move_focused_window_to_workspace(index);
                                 }
+                                Action::ToggleLauncher => {
+                                    state.toggle_launcher();
+                                }
                             }
                             return FilterResult::Intercept(());
                         }

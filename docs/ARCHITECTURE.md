@@ -113,6 +113,11 @@ that places its surfaces with `wlr-layer-shell` through `smithay-client-toolkit`
   licence while the project licence is undecided. A proper vector-font stack
   (e.g. cosmic-text + a licensed font) replaces it later without changing the
   drawing call sites.
+- The **launcher** is a centred `Layer::Overlay` card listing installed
+  applications discovered from XDG `.desktop` entries. The compositor owns the
+  open/closed state (bound to `Super + d`) so the keybinding and the shell share
+  one source of truth; the shell observes it over the control socket and
+  creates/destroys the surface accordingly (ADR-0009).
 - A future **dock** is a separate surface and reserves no screen area when
   disabled.
 - Still to build: panel widgets, launcher, quick settings, notification

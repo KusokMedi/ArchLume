@@ -35,6 +35,8 @@ pub enum Action {
     Switch(usize),
     /// `Shift + Super + digit`: move the focused window there and follow it.
     MoveTo(usize),
+    /// `Super + d`: toggle the application launcher.
+    ToggleLauncher,
 }
 
 /// Resolve a key event into a workspace action (AGENTS section 6.4).
@@ -44,6 +46,10 @@ pub enum Action {
 pub fn action_for(keysym: u32, pressed: bool, logo: bool, shift: bool) -> Option<Action> {
     if !pressed || !logo {
         return None;
+    }
+    // `Super + d` toggles the launcher (XKB_KEY_d == 0x64).
+    if keysym == 0x64 && !shift {
+        return Some(Action::ToggleLauncher);
     }
     let index = index_for_digit(keysym)?;
     Some(if shift {
@@ -159,6 +165,16 @@ mod tests {
         assert_eq!(action_for(0x35, true, false, false), None); // no Super
         assert_eq!(action_for(0x35, false, true, false), None); // released
         assert_eq!(action_for(0x61, true, true, false), None); // not a digit
+    }
+
+    #[test]
+    fn super_d_toggles_launcher() {
+        assert_eq!(
+            action_for(0x64, true, true, false),
+            Some(Action::ToggleLauncher)
+        );
+        assert_eq!(action_for(0x64, true, true, true), None); // Shift+D is not bound
+        assert_eq!(action_for(0x64, true, false, false), None); // no Super
     }
 
     #[test]

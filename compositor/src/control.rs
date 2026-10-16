@@ -25,6 +25,8 @@
 //! | `gesture <fingers> <dx> <dy>` | `ok prev|next <n>` or `ok none` |
 //! | `layers`       | `ok <count>` (mapped layer surfaces) |
 //! | `focused`      | `ok <title>` or `ok -` (focused window title) |
+//! | `launcher`     | `ok on\|off` (query the launcher state) |
+//! | `launcher on\|off\|toggle` | `ok on\|off` (set/toggle the launcher) |
 //!
 //! `err ...` responses indicate a failed request; unknown commands reply
 //! `err unknown command`.
@@ -84,6 +86,8 @@ pub enum Command {
     },
     LayerCount(Reply),
     FocusedTitle(Reply),
+    LauncherState(Reply),
+    SetLauncher(Option<bool>, Reply),
 }
 
 /// Running control server. Keeps the socket path; the accept thread is
@@ -171,6 +175,8 @@ enum Request {
     Gesture(u8, f64, f64),
     Layers,
     Focused,
+    Launcher,
+    SetLauncher(Option<bool>),
 }
 
 fn parse_request(line: &str) -> Option<Request> {
@@ -184,6 +190,13 @@ fn parse_request(line: &str) -> Option<Request> {
         "windows" => Some(Request::ListWindows),
         "layers" => Some(Request::Layers),
         "focused" => Some(Request::Focused),
+        "launcher" => Some(match parts.next() {
+            None => Request::Launcher,
+            Some("on") => Request::SetLauncher(Some(true)),
+            Some("off") => Request::SetLauncher(Some(false)),
+            Some("toggle") => Request::SetLauncher(None),
+            Some(_) => return None,
+        }),
         "switch" => Some(Request::Switch(number(&mut parts)?)),
         "move" => Some(Request::Move(number(&mut parts)?)),
         "window" => Some(Request::Window(number(&mut parts)?)),
@@ -196,6 +209,15 @@ fn parse_request(line: &str) -> Option<Request> {
             parts.next()?.parse().ok()?,
         )),
         _ => None,
+    }
+}
+
+/// `"on"`/`"off"` for a boolean flag.
+fn on_off(value: bool) -> &'static str {
+    if value {
+        "on"
+    } else {
+        "off"
     }
 }
 
@@ -234,6 +256,8 @@ fn parse(line: &str, reply: Reply) -> Option<Command> {
         },
         Request::Layers => Command::LayerCount(reply),
         Request::Focused => Command::FocusedTitle(reply),
+        Request::Launcher => Command::LauncherState(reply),
+        Request::SetLauncher(open) => Command::SetLauncher(open, reply),
     })
 }
 
@@ -343,6 +367,16 @@ pub fn handle(command: Command, state: &mut ArchLume) {
                 .sum();
             let _ = reply.send(format!("ok {count}"));
         }
+        Command::LauncherState(reply) => {
+            let _ = reply.send(format!("ok {}", on_off(state.launcher_open)));
+        }
+        Command::SetLauncher(open, reply) => {
+            let is_open = match open {
+                Some(open) => state.set_launcher(open),
+                None => state.toggle_launcher(),
+            };
+            let _ = reply.send(format!("ok {}", on_off(is_open)));
+        }
         Command::FocusedTitle(reply) => {
             let title = state
                 .focused_window_title()
@@ -377,6 +411,14 @@ mod tests {
         assert_eq!(parse_request("windows"), Some(ListWindows));
         assert_eq!(parse_request("layers"), Some(Layers));
         assert_eq!(parse_request("focused"), Some(Focused));
+        assert_eq!(parse_request("launcher"), Some(Launcher));
+        assert_eq!(parse_request("launcher on"), Some(SetLauncher(Some(true))));
+        assert_eq!(
+            parse_request("launcher off"),
+            Some(SetLauncher(Some(false)))
+        );
+        assert_eq!(parse_request("launcher toggle"), Some(SetLauncher(None)));
+        assert_eq!(parse_request("launcher maybe"), None);
         assert_eq!(parse_request("stats"), Some(Stats));
         // Surrounding whitespace is ignored.
         assert_eq!(parse_request("  ping  "), Some(Ping));

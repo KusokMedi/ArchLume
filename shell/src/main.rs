@@ -12,6 +12,7 @@
 //! Intentionally depends only on `smithay-client-toolkit`, `wayland-client`
 //! and `libc`; text uses the self-contained bitmap font in `font.rs`.
 
+mod apps;
 mod font;
 
 use std::{
@@ -62,6 +63,13 @@ const WS_POLL_MS: u128 = 500;
 const WS_GAP: i32 = 24;
 /// Fixed left edge of the active-window title (keeps panel regions stable).
 const TITLE_X: i32 = 260;
+/// Launcher overlay size in logical pixels.
+const LAUNCHER_W: u32 = 600;
+const LAUNCHER_H: u32 = 400;
+/// Launcher overlay background (dark navy, distinct from the desktop grey).
+const LAUNCHER_BG: [u8; 3] = [0x10, 0x1B, 0x2E];
+/// Maximum number of application entries drawn in the launcher.
+const MAX_APPS: usize = 14;
 
 fn main() {
     let conn = Connection::connect_to_env().expect("connect to Wayland display");
@@ -82,10 +90,13 @@ fn main() {
     // Commit with no buffer so the compositor sends the initial configure.
     layer.commit();
 
-    let pool = SlotPool::new(1024 * PANEL_HEIGHT as usize * 4, &shm).expect("create shm pool");
+    let pool = SlotPool::new(LAUNCHER_W as usize * LAUNCHER_H as usize * 4, &shm)
+        .expect("create shm pool");
     let mut panel = Panel {
         registry_state: RegistryState::new(&globals),
         output_state: OutputState::new(&globals, &qh),
+        compositor,
+        layer_shell,
         shm,
         pool,
         layer,
@@ -97,6 +108,10 @@ fn main() {
         title: None,
         control_path: control_socket_path(),
         last_ws_poll: None,
+        apps: apps::discover(),
+        launcher: None,
+        launcher_open: false,
+        launcher_configured: false,
     };
 
     loop {
@@ -119,6 +134,7 @@ fn main() {
         if panel.poll_status() {
             dirty = true;
         }
+        panel.sync_launcher(&qh);
         if dirty {
             panel.draw(&qh);
         }
@@ -169,11 +185,13 @@ fn query_control(path: &Path, command: &str) -> Option<String> {
     Some(line.trim().strip_prefix("ok ")?.to_string())
 }
 
-/// Polls the compositor for the active workspace and focused-window title.
-fn query_status(path: &Path) -> (Option<u32>, Option<String>) {
+/// Polls the compositor for the active workspace, focused-window title, and
+/// launcher state.
+fn query_status(path: &Path) -> (Option<u32>, Option<String>, bool) {
     let workspace = query_control(path, "workspace").and_then(|s| s.parse().ok());
     let title = query_control(path, "focused").filter(|s| s != "-" && !s.is_empty());
-    (workspace, title)
+    let launcher = query_control(path, "launcher").as_deref() == Some("on");
+    (workspace, title, launcher)
 }
 
 /// Local wall-clock time as `HH:MM:SS` via the C library's `localtime_r`.
@@ -193,6 +211,8 @@ fn clock_string() -> String {
 struct Panel {
     registry_state: RegistryState,
     output_state: OutputState,
+    compositor: CompositorState,
+    layer_shell: LayerShell,
     shm: Shm,
     pool: SlotPool,
     layer: LayerSurface,
@@ -204,6 +224,10 @@ struct Panel {
     title: Option<String>,
     control_path: Option<PathBuf>,
     last_ws_poll: Option<Instant>,
+    apps: Vec<String>,
+    launcher: Option<LayerSurface>,
+    launcher_open: bool,
+    launcher_configured: bool,
 }
 
 impl Panel {
@@ -218,11 +242,39 @@ impl Panel {
             return false;
         }
         self.last_ws_poll = Some(Instant::now());
-        let (workspace, title) = query_status(path);
-        let changed = workspace != self.workspace || title != self.title;
+        let (workspace, title, launcher) = query_status(path);
+        let changed =
+            workspace != self.workspace || title != self.title || launcher != self.launcher_open;
         self.workspace = workspace;
         self.title = title;
+        self.launcher_open = launcher;
         changed
+    }
+
+    /// Creates or destroys the launcher overlay so it matches `launcher_open`.
+    fn sync_launcher(&mut self, qh: &QueueHandle<Self>) {
+        match (self.launcher_open, self.launcher.is_some()) {
+            (true, false) => {
+                let surface = self.compositor.create_surface(qh);
+                let layer = self.layer_shell.create_layer_surface(
+                    qh,
+                    surface,
+                    Layer::Overlay,
+                    Some("archlume-launcher"),
+                    None,
+                );
+                // No anchor: the compositor centres the surface.
+                layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+                layer.set_size(LAUNCHER_W, LAUNCHER_H);
+                layer.commit();
+                self.launcher = Some(layer);
+                self.launcher_configured = false;
+            }
+            (false, true) => {
+                self.launcher = None;
+            }
+            _ => {}
+        }
     }
 
     fn draw(&mut self, qh: &QueueHandle<Self>) {
@@ -267,6 +319,43 @@ impl Panel {
         surface.frame(qh, surface.clone());
         buffer.attach_to(surface).expect("attach buffer");
         self.layer.commit();
+    }
+
+    /// Draws the launcher overlay: a title and a list of installed
+    /// applications. Does nothing when the launcher is not open.
+    fn draw_launcher(&mut self, _qh: &QueueHandle<Self>) {
+        let Some(layer) = self.launcher.as_ref() else {
+            return;
+        };
+        let (width, height) = (LAUNCHER_W, LAUNCHER_H);
+        let surface = layer.wl_surface().clone();
+        let stride = width as i32 * 4;
+        let (buffer, canvas) = self
+            .pool
+            .create_buffer(
+                width as i32,
+                height as i32,
+                stride,
+                wl_shm::Format::Argb8888,
+            )
+            .expect("create launcher buffer");
+
+        let mut canvas = font::Canvas {
+            data: canvas,
+            width,
+            height,
+        };
+        canvas.fill(LAUNCHER_BG);
+        canvas.draw_text(PAD * 2, 14, TEXT_SCALE, "APPS", TEXT_COLOR);
+        let mut y = 46;
+        for name in self.apps.iter().take(MAX_APPS) {
+            canvas.draw_text(PAD * 2, y, TEXT_SCALE, name, TEXT_COLOR);
+            y += 20;
+        }
+
+        surface.damage_buffer(0, 0, width as i32, height as i32);
+        buffer.attach_to(&surface).expect("attach launcher buffer");
+        layer.commit();
     }
 }
 
@@ -329,19 +418,39 @@ impl OutputHandler for Panel {
 }
 
 impl LayerShellHandler for Panel {
-    fn closed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _layer: &LayerSurface) {
-        self.exit = true;
+    fn closed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, layer: &LayerSurface) {
+        let is_launcher = self
+            .launcher
+            .as_ref()
+            .is_some_and(|l| l.wl_surface() == layer.wl_surface());
+        if is_launcher {
+            self.launcher = None;
+            self.launcher_open = false;
+        } else {
+            self.exit = true;
+        }
     }
 
     fn configure(
         &mut self,
         _conn: &Connection,
         qh: &QueueHandle<Self>,
-        _layer: &LayerSurface,
+        layer: &LayerSurface,
         configure: LayerSurfaceConfigure,
         _serial: u32,
     ) {
         let (mut width, mut height) = configure.new_size;
+
+        let is_launcher = self
+            .launcher
+            .as_ref()
+            .is_some_and(|l| l.wl_surface() == layer.wl_surface());
+        if is_launcher {
+            self.launcher_configured = true;
+            self.draw_launcher(qh);
+            return;
+        }
+
         if width == 0 {
             width = 1024;
         }
